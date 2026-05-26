@@ -493,6 +493,8 @@ map.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), 'top-
 map.addControl(new maplibregl.ScaleControl({ maxWidth: 80, unit: 'metric' }), 'bottom-right');
 
 function buildMapStyle() {
+  // terrain と sky は load イベント後に追加する（初期スタイルに含めると
+  // タイル取得完了まで load が発火しない場合があるため）
   return {
     version: 8,
     sources: {
@@ -502,14 +504,6 @@ function buildMapStyle() {
         tileSize: 256,
         maxzoom: 18,
         attribution: '© <a href="https://maps.gsi.go.jp/development/ichiran.html" target="_blank" rel="noopener">国土地理院</a>'
-      },
-      'terrain-src': {
-        type: 'raster-dem',
-        tiles: ['https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png'],
-        tileSize: 256,
-        maxzoom: 15,
-        encoding: 'terrarium',
-        attribution: 'Elevation: <a href="https://registry.opendata.aws/terrain-tiles/" target="_blank" rel="noopener">Mapzen / AWS Open Data</a>'
       }
     },
     layers: [
@@ -519,16 +513,7 @@ function buildMapStyle() {
         source: 'gsi-std',
         paint:  { 'raster-opacity': 1.0 }
       }
-    ],
-    terrain: {
-      source:       'terrain-src',
-      exaggeration: CONFIG.EXAGGERATION
-    },
-    sky: {
-      'sky-type': 'atmosphere',
-      'sky-atmosphere-sun': [0.0, 90.0],
-      'sky-atmosphere-sun-intensity': 15
-    }
+    ]
   };
 }
 
@@ -538,10 +523,37 @@ function buildMapStyle() {
 let geojsonData  = null;
 let allTownNames = [];
 
-map.on('load', async () => {
-  // ローディング解除（地形タイルが表示されてから少し待つ）
-  setTimeout(hideLoading, 900);
+// ── タイムアウト保険：10秒経っても load が来なければ強制解除
+const loadingTimeout = setTimeout(() => {
+  console.warn('[3DMap] load イベントタイムアウト。強制的にローディングを解除します。');
+  hideLoading();
+}, 10000);
 
+map.on('error', e => {
+  console.error('[3DMap] マップエラー:', e.error);
+});
+
+map.on('load', async () => {
+  clearTimeout(loadingTimeout);
+
+  // ① まず地図を表示してローディング解除
+  hideLoading();
+
+  // ② 地形（3D）ソースを load 後に追加
+  try {
+    map.addSource('terrain-src', {
+      type: 'raster-dem',
+      tiles: ['https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png'],
+      tileSize: 256,
+      maxzoom: 15,
+      encoding: 'terrarium'
+    });
+    map.setTerrain({ source: 'terrain-src', exaggeration: CONFIG.EXAGGERATION });
+  } catch (terrainErr) {
+    console.warn('[3DMap] 地形ソース追加エラー（地図は表示継続）:', terrainErr);
+  }
+
+  // ③ GeoJSON 読み込み
   try {
     const res = await fetch(CONFIG.GEOJSON_URL, { mode: 'cors' });
     if (!res.ok) throw new Error(`HTTPステータス ${res.status}`);
@@ -560,7 +572,6 @@ map.on('load', async () => {
 
   } catch (err) {
     console.error('[3DMap] GeoJSON読み込みエラー:', err);
-    hideLoading();
     showCorsError(err.message);
   }
 });
