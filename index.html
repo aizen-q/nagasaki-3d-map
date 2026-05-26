@@ -490,6 +490,119 @@
     @media (min-width: 641px) and (max-width: 900px) {
       #panel { width: 268px; }
     }
+
+    /* ════════════════════════════ OPERATION GUIDE ══ */
+    #op-guide {
+      position: fixed;
+      bottom: 90px; right: 16px;
+      width: 196px;
+      background: rgba(255,255,255,.94);
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+      border-radius: 11px;
+      box-shadow: 0 2px 16px rgba(0,0,0,.14), 0 0 0 1px rgba(0,0,0,.05);
+      z-index: 10;
+      overflow: hidden;
+      transition: all .3s ease;
+    }
+
+    #op-guide.hidden {
+      opacity: 0;
+      pointer-events: none;
+      transform: translateY(6px);
+    }
+
+    .og-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 8px 10px 7px;
+      background: var(--green);
+      color: white;
+    }
+
+    .og-head-title {
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: .05em;
+    }
+
+    .og-close {
+      background: none; border: none;
+      color: rgba(255,255,255,.7);
+      cursor: pointer; font-size: 14px;
+      padding: 0; line-height: 1;
+      transition: color .15s;
+    }
+    .og-close:hover { color: white; }
+
+    .og-body {
+      padding: 8px 10px 10px;
+    }
+
+    .og-row {
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+      padding: 3px 0;
+      border-bottom: 1px solid #f4f4f4;
+    }
+    .og-row:last-child { border-bottom: none; }
+
+    .og-device {
+      font-size: 9px;
+      font-weight: 600;
+      letter-spacing: .06em;
+      color: var(--teal);
+      text-transform: uppercase;
+      min-width: 28px;
+      padding-top: 1px;
+    }
+
+    .og-actions {
+      font-size: 11px;
+      color: #555;
+      line-height: 1.65;
+    }
+
+    .og-action-name {
+      color: #333;
+      font-weight: 500;
+    }
+
+    #op-toggle {
+      position: fixed;
+      bottom: 90px; right: 16px;
+      background: rgba(255,255,255,.92);
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+      border: 1.5px solid var(--border);
+      border-radius: 10px;
+      padding: 7px 12px;
+      font-size: 11px;
+      font-family: inherit;
+      color: #666;
+      cursor: pointer;
+      box-shadow: 0 2px 10px rgba(0,0,0,.12);
+      z-index: 10;
+      display: none;
+      align-items: center;
+      gap: 5px;
+      transition: all .2s;
+    }
+
+    #op-toggle:hover {
+      background: white;
+      color: var(--green);
+      border-color: var(--green);
+    }
+
+    #op-toggle.visible { display: flex; }
+
+    @media (max-width: 640px) {
+      #op-guide { bottom: auto; top: 16px; right: 70px; width: 170px; }
+      #op-toggle { bottom: auto; top: 16px; right: 70px; }
+    }
   </style>
 </head>
 <body>
@@ -578,6 +691,47 @@
 <div id="terrain-note">
   ※ 標高は視認性のため1.5倍に誇張して表示しています
 </div>
+
+<!-- ══ Operation Guide ══════════════════════════ -->
+<div id="op-guide">
+  <div class="og-head">
+    <span class="og-head-title">📍 操作ガイド</span>
+    <button class="og-close" onclick="closeOpGuide()" aria-label="閉じる">×</button>
+  </div>
+  <div class="og-body">
+    <div class="og-row">
+      <span class="og-device">PC</span>
+      <div class="og-actions">
+        <span class="og-action-name">左ドラッグ</span>：移動<br>
+        <span class="og-action-name">右ドラッグ上下</span>：俯角変更<br>
+        <span class="og-action-name">右ドラッグ左右</span>：回転<br>
+        <span class="og-action-name">ホイール</span>：ズーム
+      </div>
+    </div>
+    <div class="og-row">
+      <span class="og-device">SP</span>
+      <div class="og-actions">
+        <span class="og-action-name">1本指</span>：移動<br>
+        <span class="og-action-name">2本指回転</span>：視点変更<br>
+        <span class="og-action-name">ピンチ</span>：ズーム
+      </div>
+    </div>
+    <div class="og-row">
+      <span class="og-device">共通</span>
+      <div class="og-actions">
+        右上 <span class="og-action-name">◎</span> で北向きリセット
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══ Op Guide Toggle (shown after close) ════ -->
+<button id="op-toggle" onclick="openOpGuide()">
+  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round">
+    <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
+  </svg>
+  操作方法
+</button>
 
 <script>
 'use strict';
@@ -1001,6 +1155,22 @@ function showCorsError(msg) {
     </div>
   `;
 }
+
+// ══════════════════════════════════════════════════════════════
+// 操作ガイドの表示・非表示
+// ══════════════════════════════════════════════════════════════
+function closeOpGuide() {
+  document.getElementById('op-guide').classList.add('hidden');
+  document.getElementById('op-toggle').classList.add('visible');
+}
+
+function openOpGuide() {
+  document.getElementById('op-guide').classList.remove('hidden');
+  document.getElementById('op-toggle').classList.remove('visible');
+}
+
+// 初回表示から10秒後に自動的に折りたたむ
+setTimeout(closeOpGuide, 10000);
 </script>
 
 </body>
