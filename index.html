@@ -539,20 +539,9 @@ map.on('load', async () => {
   // ① まず地図を表示してローディング解除
   hideLoading();
 
-  // ② 地形（3D）ソースを load 後に追加
-  try {
-    map.addSource('terrain-src', {
-      type: 'raster-dem',
-      tiles: ['https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png'],
-      tileSize: 256,
-      minzoom: 0,
-      maxzoom: 12,   // 13以上は欠損タイルが多くスパイクが発生するため上限を下げる
-      encoding: 'terrarium'
-    });
-    map.setTerrain({ source: 'terrain-src', exaggeration: CONFIG.EXAGGERATION });
-  } catch (terrainErr) {
-    console.warn('[3DMap] 地形ソース追加エラー（地図は表示継続）:', terrainErr);
-  }
+  // ② 地形（3D）は無効化（AWSタイルの欠損データによるスパイク問題のため）
+  // 国土地理院の等高線地図＋ピッチ54°で地形の起伏は十分に伝わる
+  // map.setTerrain(...)  ← 無効化
 
   // ③ GeoJSON 読み込み
   try {
