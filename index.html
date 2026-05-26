@@ -1015,7 +1015,11 @@ function renderResults(query) {
     const el = document.createElement('div');
     el.className = 'result-item';
     el.textContent = name;
-    el.addEventListener('click', () => selectTown(name));
+    // ↓ 変更点：sendTownSearchEvent を追加（検索ボックス経由のみ計測）
+    el.addEventListener('click', () => {
+      sendTownSearchEvent(name);
+      selectTown(name);
+    });
     wrap.appendChild(el);
   });
 }
@@ -1171,6 +1175,20 @@ function openOpGuide() {
 
 // 初回表示から10秒後に自動的に折りたたむ
 setTimeout(closeOpGuide, 10000);
+
+// ══════════════════════════════════════════════════════════════
+// GA4計測：検索ボックスで選択された町名を親フレームへ送信
+// ══════════════════════════════════════════════════════════════
+function sendTownSearchEvent(townName) {
+  try {
+    window.parent.postMessage(
+      { event: 'map_town_search', town_name: townName },
+      'https://aizen2024.com'
+    );
+  } catch (e) {
+    // iframeなし（直接アクセス）の場合はエラーを無視
+  }
+}
 </script>
 
 </body>
