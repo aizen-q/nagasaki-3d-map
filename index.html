@@ -468,7 +468,7 @@ const CONFIG = {
   BEARING:       18,
   FLY_ZOOM:      14.8,
   FLY_PITCH:     58,
-  EXAGGERATION:  2.4,                 // 地形誇張倍率（長崎の急峻な地形を強調）
+  EXAGGERATION:  1.5,                 // 地形誇張倍率（スパイク対策で抑え目に設定）
   HIGHLIGHT_COLOR:  '#1B6E6C',        // ティール
   HIGHLIGHT_BORDER: '#E65100',        // オレンジ
   BORDER_ALL_COLOR: '#4A6741',        // 深緑
@@ -545,7 +545,8 @@ map.on('load', async () => {
       type: 'raster-dem',
       tiles: ['https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png'],
       tileSize: 256,
-      maxzoom: 15,
+      minzoom: 0,
+      maxzoom: 12,   // 13以上は欠損タイルが多くスパイクが発生するため上限を下げる
       encoding: 'terrarium'
     });
     map.setTerrain({ source: 'terrain-src', exaggeration: CONFIG.EXAGGERATION });
