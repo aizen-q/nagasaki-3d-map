@@ -476,7 +476,7 @@
       #results-wrap { max-height: 160px; }
 
       .maplibregl-ctrl-top-right {
-        top: 16px; right: 16px;
+        top: 72px; right: 10px; /* パネル折りたたみボタンと重ならない位置 */
       }
 
       #terrain-note { display: none; }
@@ -719,7 +719,7 @@
     <div class="og-row">
       <span class="og-device">共通</span>
       <div class="og-actions">
-        右上 <span class="og-action-name">◎</span> で北向きリセット
+        右上 <span class="og-action-name">コンパス針</span> クリックで北向きリセット
       </div>
     </div>
   </div>
@@ -745,8 +745,8 @@ const CONFIG = {
   ZOOM:          11.3,
   PITCH:         54,
   BEARING:       18,
-  FLY_ZOOM:      14.8,
-  FLY_PITCH:     58,
+  FLY_ZOOM:      13.8,   // 選択時のズーム（遠めにして3D感を強調）
+  FLY_PITCH:     62,    // ピッチを少し高くして地形を際立たせる
   EXAGGERATION:  1.5,                 // 地形誇張倍率（スパイク対策で抑え目に設定）
   HIGHLIGHT_COLOR:  '#1B6E6C',        // ティール
   HIGHLIGHT_BORDER: '#E65100',        // オレンジ
