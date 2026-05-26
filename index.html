@@ -539,9 +539,19 @@ map.on('load', async () => {
   // ① まず地図を表示してローディング解除
   hideLoading();
 
-  // ② 地形（3D）は無効化（AWSタイルの欠損データによるスパイク問題のため）
-  // 国土地理院の等高線地図＋ピッチ54°で地形の起伏は十分に伝わる
-  // map.setTerrain(...)  ← 無効化
+  // ② 地形（3D）ソースを load 後に追加（MapTiler terrain-rgb）
+  try {
+    map.addSource('terrain-src', {
+      type: 'raster-dem',
+      tiles: ['https://api.maptiler.com/tiles/terrain-rgb/{z}/{x}/{y}.png?key=z1gaCOD83iJlNE7swkZk'],
+      tileSize: 512,
+      maxzoom: 12,
+      encoding: 'mapbox'
+    });
+    map.setTerrain({ source: 'terrain-src', exaggeration: CONFIG.EXAGGERATION });
+  } catch (terrainErr) {
+    console.warn('[3DMap] 地形ソース追加エラー（地図は表示継続）:', terrainErr);
+  }
 
   // ③ GeoJSON 読み込み
   try {
