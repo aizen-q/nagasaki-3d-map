@@ -361,21 +361,125 @@
       font-size: 10px !important;
     }
 
+    /* ════════════════════════════════ TERRAIN NOTE ══ */
+    #terrain-note {
+      position: fixed;
+      bottom: 48px; left: 16px;
+      background: rgba(255,255,255,.82);
+      backdrop-filter: blur(6px);
+      -webkit-backdrop-filter: blur(6px);
+      border-radius: 6px;
+      padding: 5px 9px;
+      font-size: 10px;
+      color: #888;
+      z-index: 10;
+      pointer-events: none;
+      line-height: 1.5;
+    }
+
+    /* ════════════════════════════════ QUICK AREAS ══ */
+    .quick-areas {
+      padding: 0 12px 10px;
+      border-top: 1px solid var(--border);
+    }
+
+    .quick-label {
+      font-size: 10px;
+      color: #aaa;
+      letter-spacing: .06em;
+      padding: 7px 0 5px;
+    }
+
+    .quick-btns {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 5px;
+    }
+
+    .quick-btn {
+      padding: 4px 10px;
+      background: var(--mist);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      font-size: 11.5px;
+      color: #666;
+      cursor: pointer;
+      font-family: inherit;
+      transition: all .15s;
+      white-space: nowrap;
+    }
+
+    .quick-btn:hover {
+      background: #e8f4f3;
+      color: var(--teal);
+      border-color: var(--teal);
+    }
+
+    /* モバイル折りたたみ用 */
+    #panel.mob-collapsed .panel-search,
+    #panel.mob-collapsed #results-wrap,
+    #panel.mob-collapsed .quick-areas,
+    #panel.mob-collapsed #selected-card {
+      display: none !important;
+    }
+
+    #mob-toggle {
+      display: none;
+      position: absolute;
+      top: 14px; right: 12px;
+      background: rgba(255,255,255,.22);
+      border: 1px solid rgba(255,255,255,.3);
+      border-radius: 6px;
+      padding: 3px 8px;
+      font-size: 11px;
+      color: rgba(255,255,255,.9);
+      cursor: pointer;
+      font-family: inherit;
+      transition: background .15s;
+    }
+
+    #mob-selected-badge {
+      display: none;
+      padding: 3px 14px 7px;
+      font-size: 12px;
+      color: rgba(255,255,255,.8);
+    }
+
+    #mob-selected-badge span {
+      background: rgba(255,255,255,.18);
+      border-radius: 12px;
+      padding: 2px 10px;
+      font-weight: 500;
+    }
+
     /* ═══════════════════════════════ MOBILE ══ */
     @media (max-width: 640px) {
+      #mob-toggle { display: block; }
+
+      #mob-selected-badge { display: block; }
+
       #panel {
         top: auto; bottom: 0;
         left: 0; right: 0;
         width: 100%;
         border-radius: 16px 16px 0 0;
-        max-height: 56vh;
+        max-height: 70vh;
+        transition: max-height .3s ease;
       }
 
-      #results-wrap { max-height: 180px; }
+      #panel.mob-collapsed {
+        max-height: 64px;
+      }
+
+      .panel-head { padding-right: 60px; }
+
+      #results-wrap { max-height: 160px; }
 
       .maplibregl-ctrl-top-right {
         top: 16px; right: 16px;
       }
+
+      #terrain-note { display: none; }
 
       #reset-btn {
         bottom: auto; top: 16px;
@@ -409,9 +513,11 @@
 <!-- ══ Search Panel ════════════════════════════ -->
 <div id="panel">
   <div class="panel-head">
+    <button id="mob-toggle" onclick="toggleMobPanel()">▲ 開く</button>
     <div class="ph-label">あいぜん不動産</div>
     <div class="ph-title">長崎市 3Dエリアマップ</div>
     <div class="ph-sub">地形から選ぶ移住先</div>
+    <div id="mob-selected-badge"></div>
   </div>
 
   <div class="panel-search">
@@ -442,6 +548,20 @@
     <div class="sc-name" id="sc-name"></div>
     <div class="sc-hint">3D地形上でハイライト表示中 — ドラッグで視点変更可</div>
   </div>
+
+  <div class="quick-areas">
+    <div class="quick-label">エリアから探す</div>
+    <div class="quick-btns">
+      <button class="quick-btn" onclick="selectTown('立山一丁目')">立山</button>
+      <button class="quick-btn" onclick="selectTown('浜平一丁目')">浜平</button>
+      <button class="quick-btn" onclick="selectTown('坂本二丁目')">坂本</button>
+      <button class="quick-btn" onclick="selectTown('鳴滝一丁目')">鳴滝</button>
+      <button class="quick-btn" onclick="selectTown('大浦町')">大浦</button>
+      <button class="quick-btn" onclick="selectTown('小ヶ倉一丁目')">小ヶ倉</button>
+      <button class="quick-btn" onclick="selectTown('戸町一丁目')">戸町</button>
+      <button class="quick-btn" onclick="selectTown('福田本町')">福田</button>
+    </div>
+  </div>
 </div>
 
 <!-- ══ Reset Button ════════════════════════════ -->
@@ -453,6 +573,11 @@
   </svg>
   全体を表示
 </button>
+
+<!-- ══ Terrain Note ════════════════════════════ -->
+<div id="terrain-note">
+  ※ 標高は視認性のため1.5倍に誇張して表示しています
+</div>
 
 <script>
 'use strict';
@@ -747,6 +872,13 @@ function selectTown(name) {
   document.getElementById('sc-name').textContent = name;
   document.getElementById('selected-card').style.display = 'block';
 
+  // モバイル：選択後にパネルを折りたたむ
+  if (window.innerWidth <= 640) {
+    const badge = document.getElementById('mob-selected-badge');
+    badge.innerHTML = '<span>' + name + '</span>';
+    collapseMobPanel();
+  }
+
   // レイヤーフィルター更新
   map.setFilter('towns-hl-fill', ['==', 'S_NAME', name]);
   map.setFilter('towns-hl-line', ['==', 'S_NAME', name]);
@@ -779,8 +911,37 @@ function clearSelection() {
   map.setFilter('towns-hl-line', ['==', 'S_NAME', '__NONE__']);
 }
 
+// ══════════════════════════════════════════════════════════════
+// モバイルパネル 折りたたみ
+// ══════════════════════════════════════════════════════════════
+function toggleMobPanel() {
+  const panel = document.getElementById('panel');
+  const btn   = document.getElementById('mob-toggle');
+  if (panel.classList.contains('mob-collapsed')) {
+    panel.classList.remove('mob-collapsed');
+    btn.textContent = '▼ 閉じる';
+  } else {
+    collapseMobPanel();
+  }
+}
+
+function collapseMobPanel() {
+  const panel = document.getElementById('panel');
+  const btn   = document.getElementById('mob-toggle');
+  panel.classList.add('mob-collapsed');
+  const name = document.getElementById('sc-name').textContent;
+  btn.textContent = name ? '▲ ' + name : '▲ 開く';
+}
+
 function resetView() {
   clearSelection();
+  // モバイルバッジもクリア
+  const badge = document.getElementById('mob-selected-badge');
+  if (badge) badge.innerHTML = '';
+  const btn = document.getElementById('mob-toggle');
+  if (btn) btn.textContent = '▲ 開く';
+  const panel = document.getElementById('panel');
+  if (panel && window.innerWidth <= 640) panel.classList.remove('mob-collapsed');
   map.flyTo({
     center:   CONFIG.CENTER,
     zoom:     CONFIG.ZOOM,
