@@ -557,7 +557,7 @@
       <button class="quick-btn" onclick="selectTown('坂本二丁目')">坂本</button>
       <button class="quick-btn" onclick="selectTown('鳴滝一丁目')">鳴滝</button>
       <button class="quick-btn" onclick="selectTown('大浦町')">大浦</button>
-      <button class="quick-btn" onclick="selectTown('小ヶ倉一丁目')">小ヶ倉</button>
+      <button class="quick-btn" onclick="selectTown('岩見町')">岩見町</button>
       <button class="quick-btn" onclick="selectTown('戸町一丁目')">戸町</button>
       <button class="quick-btn" onclick="selectTown('福田本町')">福田</button>
     </div>
@@ -805,6 +805,11 @@ function initHover() {
 // 検索機能
 // ══════════════════════════════════════════════════════════════
 function initSearch() {
+  // モバイルはデフォルト折りたたみ
+  if (window.innerWidth <= 640) {
+    collapseMobPanel();
+  }
+
   const input      = document.getElementById('town-input');
   const clearBtn   = document.getElementById('clear-btn');
   const resultsDiv = document.getElementById('results-wrap');
