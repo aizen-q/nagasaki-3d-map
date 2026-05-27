@@ -644,11 +644,8 @@ function togglePanel() {
 }
 
 function closeLegend() {
+  // 凡例パネルを閉じるだけ。レイヤーとトグルはOFFにしない（地図の色付けを維持）
   document.getElementById('pop-legend').classList.remove('visible');
-  // チェックボックスも連動してOFFに
-  const cb = document.getElementById('pop-checkbox');
-  cb.checked = false;
-  onPopToggle(false);
 }
 
 // ──────────────────────────────────────────
