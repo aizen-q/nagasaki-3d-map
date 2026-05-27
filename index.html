@@ -553,6 +553,21 @@ function flyToArea(areaName, btn) {
     x1=Math.max(x1,bb[1][0]); y1=Math.max(y1,bb[1][1]);
   });
   map.fitBounds([[x0,y0],[x1,y1]], { padding: 80, pitch: 50, duration: 1000, maxZoom: 15 });
+
+  // マッチした全町をハイライト表示（複数町を in 式でまとめて指定）
+  const matchNames = matches.map(f => f.properties.S_NAME);
+  map.setFilter('town-highlight-fill',   ['in', ['get', 'S_NAME'], ['literal', matchNames]]);
+  map.setFilter('town-highlight-outline',['in', ['get', 'S_NAME'], ['literal', matchNames]]);
+
+  // エリア情報パネルを更新
+  const info = document.getElementById('area-info');
+  info.classList.add('active');
+  document.getElementById('area-name').textContent = areaName + '\uff08' + matches.length + '\u753a\uff09';
+  document.getElementById('area-sub').textContent  = '3D\u5730\u5f62\u4e0a\u3067\u30cf\u30a4\u30e9\u30a4\u30c8\u8868\u793a\u4e2d \u2014 \u30c9\u30e9\u30c3\u30b0\u3067\u8996\u70b9\u5909\u66f4\u53ef';
+  document.getElementById('area-pop').textContent  = '';
+
+  selectedTown = areaName;
+  if (window.innerWidth <= 600) document.getElementById('panel').classList.add('collapsed');
 }
 
 function resetView() {
