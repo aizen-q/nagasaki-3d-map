@@ -35,6 +35,13 @@
     #panel-header .sub { font-size:10px; color:#999; margin-left:6px; }
     #panel-close { background:none; border:none; cursor:pointer; color:#999; font-size:20px; line-height:1; display:none; }
     #panel-body { padding:12px; display:flex; flex-direction:column; gap:10px; }
+    /* スクロール可能であることを示すフェード */
+    #panel-body::after {
+      content:''; display:block; position:sticky; bottom:0;
+      height:28px; margin:-28px -12px 0;
+      background:linear-gradient(to bottom, rgba(255,255,255,0), rgba(255,255,255,0.95));
+      pointer-events:none; flex-shrink:0;
+    }
 
     /* Area info */
     #area-info { background:#f0f5ef; border-radius:8px; padding:10px 12px; display:none; }
@@ -86,7 +93,7 @@
       padding:12px 14px; display:none; min-width:185px;
     }
     #pop-legend.visible { display:block; }
-    #pop-legend h3 { font-size:11px; font-weight:700; color:#333; margin-bottom:8px; }
+    #pop-legend h3 { font-size:11px; font-weight:700; color:#333; margin:0; }
     .legend-row { display:flex; align-items:center; gap:8px; margin-bottom:4px; }
     .legend-swatch { width:14px; height:14px; border-radius:3px; flex-shrink:0; border:1px solid rgba(0,0,0,0.1); }
     .legend-label { font-size:11px; color:#555; }
@@ -208,7 +215,7 @@
       <div id="pop-toggle-row">
         <span id="pop-toggle-label">人口増減を表示</span>
         <label id="pop-toggle">
-          <input type="checkbox" id="pop-checkbox" onchange="onPopToggle(this.checked)">
+          <input type="checkbox" id="pop-checkbox" checked onchange="onPopToggle(this.checked)">
           <span class="toggle-track"></span>
           <span class="toggle-thumb"></span>
         </label>
@@ -218,9 +225,12 @@
   </div>
 </div>
 
-<!-- Legend -->
-<div id="pop-legend">
-  <h3>人口増減率（2022&#x2192;2025年）</h3>
+<!-- Legend (デフォルト表示) -->
+<div id="pop-legend" class="visible">
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+    <h3 style="margin:0;">人口増減率（2022&#x2192;2025年）</h3>
+    <button onclick="closeLegend()" style="background:none;border:none;cursor:pointer;color:#999;font-size:16px;line-height:1;padding:0 0 0 8px;" title="閉じる">&#x00D7;</button>
+  </div>
   <div class="legend-row"><div class="legend-swatch" style="background:#B71C1C"></div><span class="legend-label">+5%以上（大幅増加）</span></div>
   <div class="legend-row"><div class="legend-swatch" style="background:#EF5350"></div><span class="legend-label">+2&#x301C;+5%（増加）</span></div>
   <div class="legend-row"><div class="legend-swatch" style="background:#FFCDD2"></div><span class="legend-label">0&#x301C;+2%（微増）</span></div>
@@ -291,7 +301,7 @@ map.addControl(new maplibregl.ScaleControl({ unit: 'metric' }), 'bottom-right');
 let townGeoJSON = null;
 let selectedTown = null;
 let layersReady = false;
-let pendingPopVisibility = false;
+let pendingPopVisibility = true;  // デフォルトON
 let currentPopup = null;
 const allTownNames = [];
 
@@ -624,7 +634,21 @@ function expandGuide() {
   document.getElementById('guide-toggle').style.display = 'none';
 }
 function togglePanel() {
-  document.getElementById('panel').classList.toggle('collapsed');
+  const panel = document.getElementById('panel');
+  const isCollapsing = !panel.classList.contains('collapsed');
+  panel.classList.toggle('collapsed');
+  // スマホでパネルを開いたとき凡例を自動非表示（競合防止）
+  if (!isCollapsing && window.innerWidth <= 600) {
+    document.getElementById('pop-legend').classList.remove('visible');
+  }
+}
+
+function closeLegend() {
+  document.getElementById('pop-legend').classList.remove('visible');
+  // チェックボックスも連動してOFFに
+  const cb = document.getElementById('pop-checkbox');
+  cb.checked = false;
+  onPopToggle(false);
 }
 
 // ──────────────────────────────────────────
