@@ -505,28 +505,59 @@ function onSearchInput(val) {
 // ──────────────────────────────────────────
 // クイックエリアボタン（GeoJSON bboxベース）
 // ──────────────────────────────────────────
+// フォールバック座標（GeoJSON未ロード時または検索ミス時）
+const AREA_FALLBACK = {
+  '立山':  [129.874, 32.754, 14.5],
+  '浜平':  [129.881, 32.747, 14.5],
+  '坂本':  [129.866, 32.773, 14.5],
+  '鳳滝':  [129.852, 32.759, 14.5],
+  '大浦':  [129.879, 32.737, 14.5],
+  '岩見町': [129.882, 32.740, 14.5],
+  '戸町':  [129.875, 32.713, 14.5],
+  '福田':  [129.818, 32.772, 14.0]
+};
+
 function flyToArea(areaName, btn) {
   document.querySelectorAll('.quick-btn').forEach(b => b.classList.remove('active'));
   if (btn) btn.classList.add('active');
 
-  if (!townGeoJSON) return;
-  const matches = townGeoJSON.features.filter(f =>
-    f.properties && f.properties.S_NAME && f.properties.S_NAME.includes(areaName)
-  );
-  if (!matches.length) return;
+  // GeoJSON未ロード時はフォールバック座標で移動
+  if (!townGeoJSON) {
+    const fb = AREA_FALLBACK[areaName];
+    if (fb) map.flyTo({ center: [fb[0], fb[1]], zoom: fb[2], pitch: 50, bearing: -15, duration: 1000 });
+    return;
+  }
 
-  // 全マッチfeatureのbboxを合算
+  // 前方一致（例: 「戸町」→「戸町一丁目」のみ。「上戸町」は除外）
+  let matches = townGeoJSON.features.filter(f =>
+    f.properties && f.properties.S_NAME && f.properties.S_NAME.startsWith(areaName)
+  );
+  // 前方一致ゼロなら部分一致にフォールバック
+  if (!matches.length) {
+    matches = townGeoJSON.features.filter(f =>
+      f.properties && f.properties.S_NAME && f.properties.S_NAME.includes(areaName)
+    );
+  }
+  // それでもゼロなら固定座標
+  if (!matches.length) {
+    const fb = AREA_FALLBACK[areaName];
+    if (fb) map.flyTo({ center: [fb[0], fb[1]], zoom: fb[2], pitch: 50, bearing: -15, duration: 1000 });
+    return;
+  }
+
+  // マッチ全町のbboxを合算してfitBounds
   let x0=Infinity, y0=Infinity, x1=-Infinity, y1=-Infinity;
   matches.forEach(f => {
     const bb = getBbox(f);
     x0=Math.min(x0,bb[0][0]); y0=Math.min(y0,bb[0][1]);
     x1=Math.max(x1,bb[1][0]); y1=Math.max(y1,bb[1][1]);
   });
-  map.fitBounds([[x0,y0],[x1,y1]], { padding: 60, pitch: 50, duration: 1000 });
+  map.fitBounds([[x0,y0],[x1,y1]], { padding: 80, pitch: 50, duration: 1000, maxZoom: 15 });
 }
 
 function resetView() {
-  map.flyTo({ center: INITIAL_CENTER, zoom: INITIAL_ZOOM, pitch: INITIAL_PITCH, bearing: INITIAL_BEARING, duration: 1000 });
+  // 長崎市全体が見渡せるよう引いた表示
+  map.flyTo({ center: [129.855, 32.745], zoom: 10.5, pitch: 30, bearing: 0, duration: 1200 });
   document.querySelectorAll('.quick-btn').forEach(b => b.classList.remove('active'));
   if (layersReady) {
     map.setFilter('town-highlight-fill',   ['==', 'S_NAME', '__none__']);
