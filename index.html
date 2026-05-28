@@ -326,19 +326,9 @@ const map = new maplibregl.Map({
         tileSize: 256,
         attribution: '&copy; 国土地理院',
         maxzoom: 18
-      },
-      'satellite': {
-        type: 'raster',
-        tiles: ['https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'],
-        tileSize: 256,
-        attribution: '&copy; Esri, Maxar, Earthstar Geographics',
-        maxzoom: 19
       }
     },
-    layers: [
-      { id: 'gsi-tiles',       type: 'raster', source: 'gsi',       layout: { visibility: 'visible' } },
-      { id: 'satellite-tiles', type: 'raster', source: 'satellite',  layout: { visibility: 'none'    } }
-    ]
+    layers: [{ id: 'gsi-tiles', type: 'raster', source: 'gsi' }]
   },
   center: INITIAL_CENTER,
   zoom: INITIAL_ZOOM,
@@ -359,6 +349,7 @@ let currentPopup = null;
 const allTownNames = [];
 
 map.on('load', () => {
+  // ① terrainを最初に設定（3D地形の要）
   map.addSource('maptiler-terrain', {
     type: 'raster-dem',
     url: 'https://api.maptiler.com/tiles/terrain-rgb/tiles.json?key=' + MAPTILER_API_KEY,
@@ -369,6 +360,21 @@ map.on('load', () => {
     'sky-color': '#d4e7f5', 'sky-horizon-blend': 0.5,
     'horizon-color': '#d4e7f5', 'horizon-fog-blend': 0.5,
     'fog-color': '#d4e7f5', 'fog-ground-blend': 0.5
+  });
+
+  // ② terrain設定後に衛星ソースを追加（beforeId不使用 — トグル方式なので順序不問）
+  map.addSource('satellite', {
+    type: 'raster',
+    tiles: ['https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'],
+    tileSize: 256,
+    attribution: '&copy; Esri, Maxar, Earthstar Geographics',
+    maxzoom: 19
+  });
+  map.addLayer({
+    id: 'satellite-tiles',
+    type: 'raster',
+    source: 'satellite',
+    layout: { visibility: 'none' }
   });
 
   loadTownData();
