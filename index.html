@@ -326,9 +326,19 @@ const map = new maplibregl.Map({
         tileSize: 256,
         attribution: '&copy; 国土地理院',
         maxzoom: 18
+      },
+      'satellite': {
+        type: 'raster',
+        tiles: ['https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'],
+        tileSize: 256,
+        attribution: '&copy; Esri, Maxar, Earthstar Geographics',
+        maxzoom: 19
       }
     },
-    layers: [{ id: 'gsi-tiles', type: 'raster', source: 'gsi' }]
+    layers: [
+      { id: 'gsi-tiles',       type: 'raster', source: 'gsi',       layout: { visibility: 'visible' } },
+      { id: 'satellite-tiles', type: 'raster', source: 'satellite',  layout: { visibility: 'none'    } }
+    ]
   },
   center: INITIAL_CENTER,
   zoom: INITIAL_ZOOM,
@@ -360,21 +370,6 @@ map.on('load', () => {
     'horizon-color': '#d4e7f5', 'horizon-fog-blend': 0.5,
     'fog-color': '#d4e7f5', 'fog-ground-blend': 0.5
   });
-
-  // 衛星写真ソースを追加（初期は非表示）
-  map.addSource('satellite', {
-    type: 'raster',
-    tiles: ['https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'],
-    tileSize: 256,
-    attribution: '&copy; Esri, Maxar, Earthstar Geographics',
-    maxzoom: 19
-  });
-  map.addLayer({
-    id: 'satellite-tiles',
-    type: 'raster',
-    source: 'satellite',
-    layout: { visibility: 'none' }
-  }, 'gsi-tiles');  // gsi-tilesの直下に挿入
 
   loadTownData();
   document.getElementById('loading').style.display = 'none';
@@ -431,7 +426,7 @@ function loadTownData() {
             ['>=', ['get', 'pop_rate'], -5 ], '#1976D2',
             '#1565C0'
           ],
-          'fill-opacity': 0.65
+          'fill-opacity': 0.42
         }
       });
 
