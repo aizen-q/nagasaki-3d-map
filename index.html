@@ -51,6 +51,12 @@
     #area-name { font-size:14px; font-weight:700; color:#4A6741; margin-bottom:3px; }
     #area-sub { font-size:11px; color:#666; }
     #area-pop { font-size:11px; color:#444; margin-top:4px; }
+    #area-clear {
+      margin-top:8px; padding:5px 10px; font-size:11px; color:#888;
+      background:white; border:1px solid #ddd; border-radius:6px;
+      cursor:pointer; transition:all 0.15s; width:100%;
+    }
+    #area-clear:hover { border-color:#4A6741; color:#4A6741; background:#f5f9f4; }
 
     /* Section label */
     .section-label { font-size:11px; color:#999; font-weight:600; letter-spacing:0.5px; }
@@ -228,6 +234,7 @@
       <div id="area-name">&#x2015;</div>
       <div id="area-sub">3D地形上でハイライト表示中 &#x2014; ドラッグで視点変更可</div>
       <div id="area-pop"></div>
+      <button id="area-clear" onclick="clearSelection()">&#x2715; 選択を解除する</button>
     </div>
 
     <!-- 【順序変更】検索を上 -->
@@ -737,6 +744,19 @@ function setMapView(mode) {
   // ボタンのactive状態を更新
   document.getElementById('btn-standard').classList.toggle('active', mode === 'standard');
   document.getElementById('btn-satellite').classList.toggle('active', mode === 'satellite');
+}
+
+function clearSelection() {
+  if (layersReady) {
+    map.setFilter('town-highlight-fill',   ['==', 'S_NAME', '__none__']);
+    map.setFilter('town-highlight-outline',['==', 'S_NAME', '__none__']);
+  }
+  document.getElementById('area-info').classList.remove('active');
+  document.getElementById('search-input').value = '';
+  document.getElementById('search-results').style.display = 'none';
+  document.querySelectorAll('.quick-btn').forEach(b => b.classList.remove('active'));
+  selectedTown = null;
+  if (currentPopup) { currentPopup.remove(); currentPopup = null; }
 }
 
 function closeLegend() {
