@@ -1,0 +1,27 @@
+{
+  "name": "長崎市 3Dエリアマップ | あいぜん不動産",
+  "short_name": "長崎3Dマップ",
+  "description": "地形から選ぶ移住先 ― 長崎市の3D地形・人口増減・用途地域を立体で確認できるエリアマップです。",
+  "start_url": "/nagasaki-3d-map/",
+  "scope": "/nagasaki-3d-map/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#1a2a3a",
+  "theme_color": "#1a6b3c",
+  "lang": "ja",
+  "icons": [
+    {
+      "src": "icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "categories": ["travel", "utilities"]
+}
