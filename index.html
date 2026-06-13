@@ -901,17 +901,13 @@ function loadTownData() {
         loadAkiyaLayer();
       }
 
-      // ── 初期表示の強制同期 ──
-      // pendingPopVisibility（変数）と pop-checkbox.checked（DOM）が
-      // ズレているケースに対応するため、ここで実DOM値を正として
-      // onPopToggle() を一度呼び直し、レイヤー表示・凡例・トグルの
-      // 見た目を確実に一致させる。
-      const popChkInit = document.getElementById('pop-checkbox');
-      if (popChkInit) {
-        onPopToggle(popChkInit.checked);
+      map.setPaintProperty('pop-fill', 'fill-opacity', 0);
+      if (pendingPopVisibility) {
+        map.setPaintProperty('pop-fill', 'fill-opacity', 0.42);
+        document.getElementById('pop-legend').classList.add('visible');
+        map.setPaintProperty('town-outline', 'line-color', '#fff');
+        map.setPaintProperty('town-outline', 'line-opacity', 0.8);
       }
-
-      map.triggerRepaint();
 
       map.on('click', 'pop-fill', e => showPopup(e));
       map.on('click', 'town-highlight-fill', e => showPopup(e));
@@ -1203,6 +1199,7 @@ function onPopToggle(checked) {
       map.setPaintProperty('pop-fill', 'fill-opacity', 0.42);
       map.setPaintProperty('town-outline', 'line-color', '#fff');
       map.setPaintProperty('town-outline', 'line-opacity', 0.8);
+      requestAnimationFrame(() => map.triggerRepaint());
     } else {
       pendingPopVisibility = true;
     }
@@ -1221,6 +1218,7 @@ function onPopToggle(checked) {
       map.setFilter('town-highlight-outline', ['==', 'S_NAME', '__none__']);
       map.setPaintProperty('pop-fill', 'fill-opacity', 0);
       map.setPaintProperty('town-outline', 'line-opacity', 0.5);
+      requestAnimationFrame(() => map.triggerRepaint());
     } else {
       pendingPopVisibility = false;
     }
