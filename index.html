@@ -464,10 +464,8 @@
     <h3 style="margin:0;">空き家発生率（町丁目）</h3>
     <button onclick="closeAkiyaLegend()" style="background:none;border:none;cursor:pointer;color:#999;font-size:16px;line-height:1;padding:0 0 0 8px;" title="閉じる">&#x00D7;</button>
   </div>
-  <div class="legend-row"><div class="legend-swatch" style="background:#FFCDD2"></div><span class="legend-label">10&#x301C;12%</span></div>
-  <div class="legend-row"><div class="legend-swatch" style="background:#EF9A9A"></div><span class="legend-label">12&#x301C;15%</span></div>
-  <div class="legend-row"><div class="legend-swatch" style="background:#E57373"></div><span class="legend-label">15&#x301C;20%</span></div>
-  <div class="legend-row"><div class="legend-swatch" style="background:#C62828"></div><span class="legend-label">20%以上</span></div>
+  <div class="legend-row"><div class="legend-swatch" style="background:#FFCDD2"></div><span class="legend-label">10&#x301C;15%</span></div>
+  <div class="legend-row"><div class="legend-swatch" style="background:#C62828"></div><span class="legend-label">15%以上</span></div>
   <div class="legend-note">出典: 長崎市空家等対策計画（R8.3）P14-15</div>
 </div>
 
@@ -525,10 +523,8 @@ let akiyaCurrentPopup = null;
 
 const AKIYA_RATE_COLOR = [
   'step', ['get', 'akiya_rate_pct'],
-  '#FFCDD2',   // 10%未満は本来含まれないが安全側のデフォルト
-  12, '#EF9A9A',
-  15, '#E57373',
-  20, '#C62828'
+  '#FFCDD2',   // 10〜15%未満
+  15, '#C62828'  // 15%以上
 ];
 
 const AKIYA_TORIHIKI_LABEL = { sale: '売', rent: '賃', both: '両', unknown: '?' };
@@ -1199,7 +1195,7 @@ function onPopToggle(checked) {
       map.setPaintProperty('pop-fill', 'fill-opacity', 0.42);
       map.setPaintProperty('town-outline', 'line-color', '#fff');
       map.setPaintProperty('town-outline', 'line-opacity', 0.8);
-      requestAnimationFrame(() => map.triggerRepaint());
+      requestAnimationFrame(() => requestAnimationFrame(() => map.triggerRepaint()));
     } else {
       pendingPopVisibility = true;
     }
@@ -1218,7 +1214,7 @@ function onPopToggle(checked) {
       map.setFilter('town-highlight-outline', ['==', 'S_NAME', '__none__']);
       map.setPaintProperty('pop-fill', 'fill-opacity', 0);
       map.setPaintProperty('town-outline', 'line-opacity', 0.5);
-      requestAnimationFrame(() => map.triggerRepaint());
+      requestAnimationFrame(() => requestAnimationFrame(() => map.triggerRepaint()));
     } else {
       pendingPopVisibility = false;
     }
