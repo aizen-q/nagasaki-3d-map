@@ -562,7 +562,7 @@ function loadAkiyaLayer() {
           'fill-color': AKIYA_RATE_COLOR,
           'fill-opacity': 0.45
         }
-      }, 'town-outline');
+      }, 'town-highlight-fill');
 
       map.setPaintProperty('town-outline', 'line-color', '#fff');
       map.setPaintProperty('town-outline', 'line-opacity', 0.85);
@@ -570,6 +570,16 @@ function loadAkiyaLayer() {
       map.on('click', 'akiya-rate-fill', e => {
         if (!e.features || !e.features.length) return;
         if (selectedTown) return;
+
+        // ── 同地点に人口増減レイヤー(pop-fill)のfeatureがある場合は、
+        //    そちらのクリックハンドラ(showPopup)に処理を譲り、
+        //    空き家発生率ポップアップは出さない（2重表示防止）。
+        //    人口増減トグルがOFFの間はpop-fillのfill-opacityが0だが、
+        //    レイヤー自体は存在しmap.on('click','pop-fill',...)は有効なため、
+        //    ここで重複してしまう。
+        const popFeatures = map.queryRenderedFeatures(e.point, { layers: ['pop-fill'] });
+        if (popFeatures.length) return;
+
         if (akiyaCurrentPopup) akiyaCurrentPopup.remove();
 
         const p = e.features[0].properties;
@@ -898,6 +908,8 @@ function loadTownData() {
         map.setPaintProperty('town-outline', 'line-opacity', 0.8);
       }
 
+      map.triggerRepaint();
+
       map.on('click', 'pop-fill', e => showPopup(e));
       map.on('click', 'town-highlight-fill', e => showPopup(e));
       map.on('mouseenter', 'pop-fill', () => map.getCanvas().style.cursor = 'pointer');
@@ -910,6 +922,7 @@ function loadTownData() {
 
 function showPopup(e) {
   if (!e.features || !e.features.length) return;
+  if (akiyaCurrentPopup) { akiyaCurrentPopup.remove(); akiyaCurrentPopup = null; }
   const p = e.features[0].properties;
   const name = p.S_NAME || '不明';
   const p22 = p.pop_y2022 > 0 ? p.pop_y2022 : null;
