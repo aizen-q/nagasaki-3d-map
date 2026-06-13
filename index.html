@@ -917,6 +917,11 @@ function loadTownData() {
 
 function showPopup(e) {
   if (!e.features || !e.features.length) return;
+  // 空き家バンク表示中は、町丁目クリック時に
+  // 人口推移ポップアップを出さない（色は空き家発生率を示しているため、
+  // 人口増減と並べると誤解を招く）。
+  const akiyaChkShow = document.getElementById('akiya-checkbox');
+  if (akiyaChkShow && akiyaChkShow.checked) return;
   if (akiyaCurrentPopup) { akiyaCurrentPopup.remove(); akiyaCurrentPopup = null; }
   const p = e.features[0].properties;
   const name = p.S_NAME || '不明';
@@ -1178,6 +1183,9 @@ function closeYotoLegend() {
 // ハイライトフィルター・area-info をリセットする処理を追加
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 function onPopToggle(checked) {
+  console.log('[DEBUG] onPopToggle called. checked=', checked,
+    ' layersReady=', layersReady,
+    ' before fill-opacity=', layersReady ? map.getPaintProperty('pop-fill','fill-opacity') : 'n/a');
   const legend = document.getElementById('pop-legend');
   if (checked) {
     const yotoChk = document.getElementById('yoto-checkbox');
@@ -1195,7 +1203,10 @@ function onPopToggle(checked) {
       map.setPaintProperty('pop-fill', 'fill-opacity', 0.42);
       map.setPaintProperty('town-outline', 'line-color', '#fff');
       map.setPaintProperty('town-outline', 'line-opacity', 0.8);
-      requestAnimationFrame(() => requestAnimationFrame(() => map.triggerRepaint()));
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        map.triggerRepaint();
+        console.log('[DEBUG] after RAF fill-opacity=', map.getPaintProperty('pop-fill','fill-opacity'));
+      }));
     } else {
       pendingPopVisibility = true;
     }
@@ -1214,7 +1225,10 @@ function onPopToggle(checked) {
       map.setFilter('town-highlight-outline', ['==', 'S_NAME', '__none__']);
       map.setPaintProperty('pop-fill', 'fill-opacity', 0);
       map.setPaintProperty('town-outline', 'line-opacity', 0.5);
-      requestAnimationFrame(() => requestAnimationFrame(() => map.triggerRepaint()));
+      requestAnimationFrame(() => requestAnimationFrame(() => {
+        map.triggerRepaint();
+        console.log('[DEBUG] after RAF fill-opacity=', map.getPaintProperty('pop-fill','fill-opacity'));
+      }));
     } else {
       pendingPopVisibility = false;
     }
