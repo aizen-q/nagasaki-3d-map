@@ -297,8 +297,9 @@
     .akiya-popup .popup-note { font-size:9px; color:#aaa; margin-top:6px; }
 
     @media (max-width:600px) {
-      #akiya-legend { bottom:16px; left:12px; }
-      #akiya-pin-legend { bottom:16px; left:12px; right:auto; max-height:50vh; }
+      /* 空き家発生率＝左下、空き家バンクピン＝右下 で横並び */
+      #akiya-legend { bottom:16px; left:12px; right:auto; max-height:50vh; }
+      #akiya-pin-legend { bottom:16px; right:12px; left:auto; max-height:50vh; }
 
       /* スマホ: 凡例を折りたたみ式に */
       .legend-head { cursor:pointer; }
