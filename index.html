@@ -101,9 +101,11 @@
     .toggle-track { position:absolute; top:0; left:0; right:0; bottom:0; background:#ddd; border-radius:12px; transition:background 0.2s; pointer-events:none; }
     .toggle-thumb { position:absolute; top:3px; left:3px; width:18px; height:18px; background:white; border-radius:50%; box-shadow:0 1px 3px rgba(0,0,0,0.3); transition:transform 0.2s; pointer-events:none; }
     #pop-checkbox:checked + .toggle-track,
-    #yoto-checkbox:checked + .toggle-track { background:#1B6E6C; }
+    #yoto-checkbox:checked + .toggle-track,
+    #akiya-checkbox:checked + .toggle-track { background:#1B6E6C; }
     #pop-checkbox:checked ~ .toggle-thumb,
-    #yoto-checkbox:checked ~ .toggle-thumb { transform:translateX(20px); }
+    #yoto-checkbox:checked ~ .toggle-thumb,
+    #akiya-checkbox:checked ~ .toggle-thumb { transform:translateX(20px); }
     #pop-note { font-size:10px; color:#999; margin-top:4px; }
 
     /* Legend */
@@ -398,7 +400,8 @@
           <span class="toggle-thumb"></span>
         </label>
       </div>
-      <div class="toggle-note">面塗り＝空き家発生率10%以上の町（長崎市空家等対策計画R8.3）／ピン＝バンク登録物件（長崎市公開情報）</div>
+      <div class="toggle-note">面塗り：空き家発生率10%以上の町（R8.3空家等対策計画）</div>
+      <div class="toggle-note">ピン：空き家バンク登録物件（市公開情報）</div>
     </div>
 
 
