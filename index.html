@@ -222,6 +222,78 @@
       #pop-legend { bottom:16px; left:12px; }
       #yoto-legend { bottom:16px; left:12px; right:auto; max-height:50vh; }
     }
+    /* ── 空き家バンク トグル・凡例・ピン ── */
+    #akiya-section { border-top:1px solid #f0f0f0; padding-top:10px; }
+
+    /* 面塗り凡例（左下） */
+    #akiya-legend {
+      display:none;
+      position:absolute; bottom:12px; left:12px; z-index:100;
+      background:rgba(255,255,255,0.97); border-radius:10px;
+      box-shadow:0 2px 12px rgba(0,0,0,0.15);
+      padding:12px 14px; min-width:200px;
+      max-height:calc(100vh - 80px); overflow-y:auto;
+    }
+    #akiya-legend.visible { display:block; }
+    #akiya-legend h3 { font-size:11px; font-weight:700; color:#333; margin:0; }
+    #akiya-legend .legend-note { font-size:9px; color:#aaa; margin-top:6px; }
+
+    /* ピン凡例（右下、用途地域凡例と同位置パターン） */
+    #akiya-pin-legend {
+      display:none;
+      position:absolute; bottom:100px; right:12px; z-index:100;
+      background:rgba(255,255,255,0.95); border-radius:8px;
+      padding:10px 12px; box-shadow:0 2px 8px rgba(0,0,0,0.18);
+      z-index:100; min-width:190px;
+    }
+    #akiya-pin-legend.visible { display:block; }
+    #akiya-pin-legend h3 { font-size:11px; font-weight:700; color:#333; margin:0 0 6px 0; }
+    #akiya-pin-legend .legend-note { font-size:9px; color:#aaa; margin-top:6px; }
+    .akiya-pin-row { display:flex; align-items:center; gap:8px; margin-bottom:4px; }
+    .akiya-pin-sample {
+      width:18px; height:18px; border-radius:50%;
+      display:flex; align-items:center; justify-content:center;
+      color:#fff; font-size:9px; font-weight:700;
+      border:2px solid rgba(255,255,255,0.9); box-shadow:0 1px 3px rgba(0,0,0,0.25);
+      flex-shrink:0;
+    }
+
+    /* ピンDOM要素 */
+    .akiya-marker {
+      width:26px; height:26px; border-radius:50%;
+      display:flex; align-items:center; justify-content:center;
+      color:#fff; font-size:11px; font-weight:700;
+      border:2px solid rgba(255,255,255,0.9);
+      box-shadow:0 2px 6px rgba(0,0,0,0.3);
+      cursor:pointer;
+    }
+    .akiya-marker.kubun-building { background:#1a6b3c; }
+    .akiya-marker.kubun-land     { background:#C2841C; }
+
+    /* ピンのポップアップ */
+    .akiya-popup .popup-inner { padding:12px 14px; }
+    .akiya-popup .popup-title { font-size:13px; font-weight:700; color:#333; margin-bottom:6px; }
+    .akiya-popup .popup-row { display:flex; justify-content:space-between; font-size:12px; color:#555; margin-bottom:3px; }
+    .akiya-popup .popup-row span:last-child { font-weight:600; color:#333; }
+    .akiya-popup .popup-badge {
+      display:inline-block; font-size:10px; font-weight:700; color:#fff;
+      border-radius:4px; padding:1px 6px; margin-right:4px;
+    }
+    .akiya-popup .badge-building { background:#1a6b3c; }
+    .akiya-popup .badge-land     { background:#C2841C; }
+    .akiya-popup .popup-link {
+      display:block; margin-top:8px; text-align:center;
+      font-size:11px; font-weight:600; color:#1B6E6C;
+      border:1px solid #1B6E6C; border-radius:6px; padding:5px 0;
+      text-decoration:none;
+    }
+    .akiya-popup .popup-link:hover { background:#1B6E6C; color:#fff; }
+    .akiya-popup .popup-note { font-size:9px; color:#aaa; margin-top:6px; }
+
+    @media (max-width:600px) {
+      #akiya-legend { bottom:16px; left:12px; }
+      #akiya-pin-legend { bottom:16px; left:12px; right:auto; max-height:50vh; }
+    }
   </style>
 </head>
 <body>
@@ -315,6 +387,21 @@
       </div>
       <div class="toggle-note">2019年時点のデータ（国土数値情報）</div>
     </div>
+
+    <!-- Akiya bank toggle（用途地域トグルの直後に追加） -->
+    <div id="akiya-section">
+      <div class="toggle-row">
+        <span class="toggle-label">空き家バンクを表示</span>
+        <label class="toggle-switch">
+          <input type="checkbox" id="akiya-checkbox" onchange="onAkiyaToggle(this.checked)">
+          <span class="toggle-track"></span>
+          <span class="toggle-thumb"></span>
+        </label>
+      </div>
+      <div class="toggle-note">面塗り＝空き家発生率10%以上の町（長崎市空家等対策計画R8.3）／ピン＝バンク登録物件（長崎市公開情報）</div>
+    </div>
+
+
   </div>
 </div>
 
@@ -367,6 +454,36 @@
   <div class="legend-note">2019年時点のデータ（国土数値情報）</div>
 </div>
 
+
+<!-- 空き家発生率 面塗り Legend -->
+<div id="akiya-legend">
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+    <h3 style="margin:0;">空き家発生率（町丁目）</h3>
+    <button onclick="closeAkiyaLegend()" style="background:none;border:none;cursor:pointer;color:#999;font-size:16px;line-height:1;padding:0 0 0 8px;" title="閉じる">&#x00D7;</button>
+  </div>
+  <div class="legend-row"><div class="legend-swatch" style="background:#FFCDD2"></div><span class="legend-label">10&#x301C;12%</span></div>
+  <div class="legend-row"><div class="legend-swatch" style="background:#EF9A9A"></div><span class="legend-label">12&#x301C;15%</span></div>
+  <div class="legend-row"><div class="legend-swatch" style="background:#E57373"></div><span class="legend-label">15&#x301C;20%</span></div>
+  <div class="legend-row"><div class="legend-swatch" style="background:#C62828"></div><span class="legend-label">20%以上</span></div>
+  <div class="legend-note">出典: 長崎市空家等対策計画（R8.3）P14-15</div>
+</div>
+
+<!-- バンク登録物件 ピン Legend -->
+<div id="akiya-pin-legend">
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+    <h3 style="margin:0;">空き家バンク登録物件</h3>
+    <button onclick="closeAkiyaPinLegend()" style="background:none;border:none;cursor:pointer;color:#999;font-size:16px;line-height:1;padding:0 0 0 8px;" title="閉じる">&#x00D7;</button>
+  </div>
+  <div style="font-size:10px;color:#888;margin-bottom:6px;font-weight:bold;">色＝種類</div>
+  <div class="akiya-pin-row"><div class="akiya-pin-sample" style="background:#1a6b3c;">　</div><span class="legend-label">空き家（建物あり）</span></div>
+  <div class="akiya-pin-row"><div class="akiya-pin-sample" style="background:#C2841C;">　</div><span class="legend-label">空き地（土地のみ）</span></div>
+  <div style="font-size:10px;color:#888;margin:8px 0 6px 0;font-weight:bold;">文字＝取引</div>
+  <div class="akiya-pin-row"><div class="akiya-pin-sample" style="background:#888;">売</div><span class="legend-label">売買希望</span></div>
+  <div class="akiya-pin-row"><div class="akiya-pin-sample" style="background:#888;">賃</div><span class="legend-label">賃貸希望</span></div>
+  <div class="akiya-pin-row"><div class="akiya-pin-sample" style="background:#888;">両</div><span class="legend-label">売買・賃貸どちらも可</span></div>
+  <div class="legend-note">出典: 長崎市空き家空き地バンク（公開情報・町丁目単位）<br>クリックで市公式ページへ（番地等は非公開）</div>
+</div>
+
 <!-- Guide -->
 <div id="guide">
   <div id="guide-header">
@@ -387,6 +504,200 @@
 <button id="guide-toggle" onclick="expandGuide()">&#x1F4CD; 操作方法</button>
 
 <script>
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// 空き家バンク（MAP-1: ピン / MAP-2: 面塗り）
+// 既存の onPopToggle / onYotoToggle と同じ
+//   ・ON時に他のトグルをOFFにする（排他制御）
+//   ・OFF時に選択状態・ポップアップ・凡例をリセットする
+// パターンに揃えてある。
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+const AKIYA_URL      = 'https://aizen2024.com/wp-content/uploads/2026/06/akiya.geojson';
+const AKIYA_RATE_URL = 'https://aizen2024.com/wp-content/uploads/2026/06/akiya_rate.geojson';
+
+let akiyaLayerReady = false;
+let pendingAkiyaVisibility = false;
+let akiyaMarkers = [];          // 生成したピン（マーカー）の配列。トグルOFFで全消去するため保持
+let akiyaCurrentPopup = null;
+
+const AKIYA_RATE_COLOR = [
+  'step', ['get', 'akiya_rate_pct'],
+  '#FFCDD2',   // 10%未満は本来含まれないが安全側のデフォルト
+  12, '#EF9A9A',
+  15, '#E57373',
+  20, '#C62828'
+];
+
+const AKIYA_TORIHIKI_LABEL = { sale: '売', rent: '賃', both: '両', unknown: '?' };
+const AKIYA_TORIHIKI_TEXT  = { sale: '売買希望', rent: '賃貸希望', both: '売買・賃貸どちらも可', unknown: '要確認' };
+const AKIYA_KUBUN_TEXT     = { building: '空き家（建物あり）', land: '空き地（土地のみ）' };
+const AKIYA_KUBUN_COLOR    = { building: '#1a6b3c', land: '#C2841C' };
+
+function loadAkiyaLayer() {
+  if (akiyaLayerReady) {
+    // 2回目以降：既存レイヤー/マーカーを再表示するだけ
+    map.setLayoutProperty('akiya-rate-fill', 'visibility', 'visible');
+    map.setPaintProperty('town-outline', 'line-color', '#fff');
+    map.setPaintProperty('town-outline', 'line-opacity', 0.8);
+    akiyaMarkers.forEach(m => m.addTo(map));
+    document.getElementById('akiya-legend').classList.add('visible');
+    document.getElementById('akiya-pin-legend').classList.add('visible');
+    return;
+  }
+
+  // --- ① 面塗り（空き家発生率） ---
+  fetch(AKIYA_RATE_URL)
+    .then(r => { if (!r.ok) throw new Error('fetch failed: akiya_rate'); return r.json(); })
+    .then(geojson => {
+      map.addSource('akiya-rate', { type: 'geojson', data: geojson });
+      map.addLayer({
+        id: 'akiya-rate-fill',
+        type: 'fill',
+        source: 'akiya-rate',
+        layout: { visibility: 'visible' },
+        paint: {
+          'fill-color': AKIYA_RATE_COLOR,
+          'fill-opacity': 0.45
+        }
+      }, 'town-outline');
+
+      map.setPaintProperty('town-outline', 'line-color', '#fff');
+      map.setPaintProperty('town-outline', 'line-opacity', 0.85);
+
+      map.on('click', 'akiya-rate-fill', e => {
+        if (!e.features || !e.features.length) return;
+        if (selectedTown) return;
+        if (akiyaCurrentPopup) akiyaCurrentPopup.remove();
+
+        const p = e.features[0].properties;
+        const PopupClass = window.maplibregl ? window.maplibregl.Popup : null;
+        if (!PopupClass) return;
+
+        akiyaCurrentPopup = new PopupClass({ closeButton: true, closeOnClick: true })
+          .setLngLat(e.lngLat)
+          .setHTML(
+            '<div class="popup-inner">' +
+            '<div class="popup-title">' + p.S_NAME + '</div>' +
+            '<div class="popup-row"><span>空き家発生率</span><span>' + p.akiya_rate_pct + '%</span></div>' +
+            '<div class="popup-note">出典: 長崎市空家等対策計画（R8.3）</div>' +
+            '</div>'
+          )
+          .addTo(map);
+      });
+      map.on('mouseenter', 'akiya-rate-fill', () => { if (!selectedTown) map.getCanvas().style.cursor = 'pointer'; });
+      map.on('mouseleave', 'akiya-rate-fill', () => { if (!selectedTown) map.getCanvas().style.cursor = ''; });
+
+      document.getElementById('akiya-legend').classList.add('visible');
+    })
+    .catch(err => console.error('Akiya rate GeoJSON error:', err));
+
+  // --- ② ピン（バンク登録物件） ---
+  fetch(AKIYA_URL)
+    .then(r => { if (!r.ok) throw new Error('fetch failed: akiya'); return r.json(); })
+    .then(geojson => {
+      geojson.features.forEach(f => {
+        const p = f.properties;
+        const [lng, lat] = f.geometry.coordinates;
+
+        const el = document.createElement('div');
+        el.className = 'akiya-marker kubun-' + p.kubun;
+        el.textContent = AKIYA_TORIHIKI_LABEL[p.torihiki] || '?';
+        el.title = p.name;
+
+        const marker = new maplibregl.Marker({ element: el })
+          .setLngLat([lng, lat]);
+
+        el.addEventListener('click', () => {
+          if (akiyaCurrentPopup) akiyaCurrentPopup.remove();
+
+          const priceRow = (p.price_man && p.price_man > 0)
+            ? '<div class="popup-row"><span>希望価格</span><span>' + p.price_man.toLocaleString() + '万円</span></div>'
+            : '';
+          const rentRow = (p.rent_yen && p.rent_yen > 0)
+            ? '<div class="popup-row"><span>希望賃料</span><span>' + p.rent_yen.toLocaleString() + '円/月</span></div>'
+            : '';
+
+          akiyaCurrentPopup = new maplibregl.Popup({ closeButton: true, maxWidth: '240px', className: 'akiya-popup' })
+            .setLngLat([lng, lat])
+            .setHTML(
+              '<div class="popup-inner">' +
+              '<div class="popup-title">' + p.name + '</div>' +
+              '<div style="margin-bottom:6px;">' +
+              '<span class="popup-badge badge-' + p.kubun + '">' + AKIYA_KUBUN_TEXT[p.kubun] + '</span>' +
+              '<span class="popup-badge" style="background:#666;">' + AKIYA_TORIHIKI_TEXT[p.torihiki] + '</span>' +
+              '</div>' +
+              '<div class="popup-row"><span>所在地</span><span>' + p.addr + '</span></div>' +
+              priceRow + rentRow +
+              '<a class="popup-link" href="' + p.url + '" target="_blank" rel="noopener">市公式ページで見る（別タブ）</a>' +
+              '<div class="popup-note">所在地は町丁目までの情報です（長崎市空き家空き地バンク公開情報）</div>' +
+              '</div>'
+            )
+            .addTo(map);
+        });
+
+        marker.addTo(map);
+        akiyaMarkers.push(marker);
+      });
+
+      document.getElementById('akiya-pin-legend').classList.add('visible');
+      akiyaLayerReady = true;
+    })
+    .catch(err => console.error('Akiya pins GeoJSON error:', err));
+}
+
+function onAkiyaToggle(checked) {
+  if (checked) {
+    // ── 排他制御：人口増減・用途地域をOFFにする ──
+    const popChk = document.getElementById('pop-checkbox');
+    if (popChk && popChk.checked) {
+      popChk.checked = false;
+      onPopToggle(false);
+    }
+    const yotoChk = document.getElementById('yoto-checkbox');
+    if (yotoChk && yotoChk.checked) {
+      yotoChk.checked = false;
+      onYotoToggle(false);
+    }
+
+    if (layersReady) {
+      loadAkiyaLayer();
+    } else {
+      pendingAkiyaVisibility = true;
+    }
+  } else {
+    document.getElementById('akiya-legend').classList.remove('visible');
+    document.getElementById('akiya-pin-legend').classList.remove('visible');
+
+    if (akiyaCurrentPopup) {
+      akiyaCurrentPopup.remove();
+      akiyaCurrentPopup = null;
+    }
+
+    if (akiyaLayerReady) {
+      map.setLayoutProperty('akiya-rate-fill', 'visibility', 'none');
+      akiyaMarkers.forEach(m => m.remove());
+
+      const popOn  = document.getElementById('pop-checkbox').checked;
+      const yotoOn = document.getElementById('yoto-checkbox').checked;
+      if (!popOn && !yotoOn) {
+        map.setPaintProperty('town-outline', 'line-color', '#fff');
+        map.setPaintProperty('town-outline', 'line-opacity', 0.6);
+        map.setPaintProperty('town-outline', 'line-width', 1.0);
+      }
+    } else {
+      pendingAkiyaVisibility = false;
+    }
+  }
+}
+
+function closeAkiyaLegend() {
+  document.getElementById('akiya-legend').classList.remove('visible');
+}
+function closeAkiyaPinLegend() {
+  document.getElementById('akiya-pin-legend').classList.remove('visible');
+}
+
+
 const NODOT_MAP = {
   "三原": "三原一丁目",
   "京泊": "京泊一丁目",
@@ -571,6 +882,9 @@ function loadTownData() {
       layersReady = true;
       if (pendingYotoVisibility) {
         loadYotoLayer();
+      }
+      if (pendingAkiyaVisibility) {
+        loadAkiyaLayer();
       }
 
       map.setPaintProperty('pop-fill', 'fill-opacity', 0);
@@ -817,6 +1131,11 @@ function onYotoToggle(checked) {
       popChk.checked = false;
       onPopToggle(false);
     }
+    const akiyaChk2 = document.getElementById('akiya-checkbox');
+    if (akiyaChk2 && akiyaChk2.checked) {
+      akiyaChk2.checked = false;
+      onAkiyaToggle(false);
+    }
     if (layersReady) {
       loadYotoLayer();
     } else {
@@ -854,6 +1173,11 @@ function onPopToggle(checked) {
     if (yotoChk && yotoChk.checked) {
       yotoChk.checked = false;
       onYotoToggle(false);
+    }
+    const akiyaChk1 = document.getElementById('akiya-checkbox');
+    if (akiyaChk1 && akiyaChk1.checked) {
+      akiyaChk1.checked = false;
+      onAkiyaToggle(false);
     }
     legend.classList.add('visible');
     if (layersReady) {
