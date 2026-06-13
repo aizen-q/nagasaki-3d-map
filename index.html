@@ -897,12 +897,14 @@ function loadTownData() {
         loadAkiyaLayer();
       }
 
-      map.setPaintProperty('pop-fill', 'fill-opacity', 0);
       if (pendingPopVisibility) {
+        map.setLayoutProperty('pop-fill', 'visibility', 'visible');
         map.setPaintProperty('pop-fill', 'fill-opacity', 0.42);
         document.getElementById('pop-legend').classList.add('visible');
         map.setPaintProperty('town-outline', 'line-color', '#fff');
         map.setPaintProperty('town-outline', 'line-opacity', 0.8);
+      } else {
+        map.setLayoutProperty('pop-fill', 'visibility', 'none');
       }
 
       map.on('click', 'pop-fill', e => showPopup(e));
@@ -1183,9 +1185,6 @@ function closeYotoLegend() {
 // ハイライトフィルター・area-info をリセットする処理を追加
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 function onPopToggle(checked) {
-  console.log('[DEBUG] onPopToggle called. checked=', checked,
-    ' layersReady=', layersReady,
-    ' before fill-opacity=', layersReady ? map.getPaintProperty('pop-fill','fill-opacity') : 'n/a');
   const legend = document.getElementById('pop-legend');
   if (checked) {
     const yotoChk = document.getElementById('yoto-checkbox');
@@ -1200,13 +1199,10 @@ function onPopToggle(checked) {
     }
     legend.classList.add('visible');
     if (layersReady) {
+      map.setLayoutProperty('pop-fill', 'visibility', 'visible');
       map.setPaintProperty('pop-fill', 'fill-opacity', 0.42);
       map.setPaintProperty('town-outline', 'line-color', '#fff');
       map.setPaintProperty('town-outline', 'line-opacity', 0.8);
-      requestAnimationFrame(() => requestAnimationFrame(() => {
-        map.triggerRepaint();
-        console.log('[DEBUG] after RAF fill-opacity=', map.getPaintProperty('pop-fill','fill-opacity'));
-      }));
     } else {
       pendingPopVisibility = true;
     }
@@ -1223,12 +1219,8 @@ function onPopToggle(checked) {
     if (layersReady) {
       map.setFilter('town-highlight-fill',   ['==', 'S_NAME', '__none__']);
       map.setFilter('town-highlight-outline', ['==', 'S_NAME', '__none__']);
-      map.setPaintProperty('pop-fill', 'fill-opacity', 0);
+      map.setLayoutProperty('pop-fill', 'visibility', 'none');
       map.setPaintProperty('town-outline', 'line-opacity', 0.5);
-      requestAnimationFrame(() => requestAnimationFrame(() => {
-        map.triggerRepaint();
-        console.log('[DEBUG] after RAF fill-opacity=', map.getPaintProperty('pop-fill','fill-opacity'));
-      }));
     } else {
       pendingPopVisibility = false;
     }
