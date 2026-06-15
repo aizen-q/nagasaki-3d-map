@@ -186,10 +186,6 @@
     }
     .view-btn.active { background:#4A6741; color:white; }
     .view-btn:first-child { border-right:1px solid #e0e0e0; }
-
-    /* ── 凡例 折りたたみ（スマホのみ有効。PCでは常時展開） ── */
-    .legend-caret { display:none; }
-    .legend-head { cursor:default; }
     @media(max-width:600px){
       #view-toggle { bottom:calc(55vh + 16px); left:12px; right:auto; }
     }
@@ -229,7 +225,7 @@
       #yoto-legend { bottom:16px; left:12px; right:auto; max-height:50vh; }
     }
     /* ── 空き家バンク トグル・凡例・ピン ── */
-    #akiya-section { border-top:1px solid #f0f0f0; padding-top:10px; }
+    #akiya-section { border-top:1px solid #f0f0f0; padding-top:10px; padding-bottom:24px; }
 
     /* 面塗り凡例（左下） */
     #akiya-legend {
@@ -297,27 +293,8 @@
     .akiya-popup .popup-note { font-size:9px; color:#aaa; margin-top:6px; }
 
     @media (max-width:600px) {
-      /* 空き家発生率＝左下、空き家バンクピン＝右下 で横並び */
-      #akiya-legend { bottom:16px; left:12px; right:auto; max-height:50vh; }
-      #akiya-pin-legend { bottom:16px; right:12px; left:auto; max-height:50vh; }
-
-      /* スマホ: 凡例を折りたたみ式に */
-      .legend-head { cursor:pointer; }
-      .legend-caret {
-        display:inline-block; margin-left:auto; color:#999; font-size:10px;
-        transition:transform 0.2s; padding:0 4px;
-      }
-      .legend-collapsed .legend-caret { transform:rotate(-90deg); }
-      .legend-collapsed .legend-body { display:none; }
-      /* 畳んだときは見出しの下マージンを詰める */
-      .legend-collapsed .legend-head { margin-bottom:0; }
-      /* 畳んだときの凡例は最小サイズに */
-      #pop-legend.legend-collapsed,
-      #yoto-legend.legend-collapsed,
-      #akiya-legend.legend-collapsed,
-      #akiya-pin-legend.legend-collapsed {
-        min-width:0; padding:8px 10px;
-      }
+      #akiya-legend { bottom:16px; left:12px; }
+      #akiya-pin-legend { bottom:16px; left:12px; right:auto; max-height:50vh; }
     }
   </style>
 </head>
@@ -423,7 +400,7 @@
           <span class="toggle-thumb"></span>
         </label>
       </div>
-      <div class="toggle-note">面塗り：空き家発生率10%以上の町（R8.3空家等対策計画）</div>
+      <div class="toggle-note">面塗り：空き家発生率10%以上の町（空家等対策計画 R8.3）</div>
       <div class="toggle-note">ピン：空き家バンク登録物件（市公開情報）</div>
     </div>
 
@@ -438,13 +415,11 @@
 </div>
 
 <!-- Legend (デフォルト表示) -->
-<div id="pop-legend" class="visible legend-collapsed">
-  <div class="legend-head" onclick="toggleLegend(this)" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+<div id="pop-legend" class="visible">
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
     <h3 style="margin:0;">人口増減率（2022&#x2192;2025年）</h3>
-    <span class="legend-caret">&#x25BC;</span>
-    <button onclick="event.stopPropagation();closeLegend()" style="background:none;border:none;cursor:pointer;color:#999;font-size:16px;line-height:1;padding:0 0 0 8px;" title="閉じる">&#x00D7;</button>
+    <button onclick="closeLegend()" style="background:none;border:none;cursor:pointer;color:#999;font-size:16px;line-height:1;padding:0 0 0 8px;" title="閉じる">&#x00D7;</button>
   </div>
-  <div class="legend-body">
   <div class="legend-row"><div class="legend-swatch" style="background:#B71C1C"></div><span class="legend-label">+5%以上（大幅増加）</span></div>
   <div class="legend-row"><div class="legend-swatch" style="background:#EF5350"></div><span class="legend-label">+2&#x301C;+5%（増加）</span></div>
   <div class="legend-row"><div class="legend-swatch" style="background:#FFCDD2"></div><span class="legend-label">0&#x301C;+2%（微増）</span></div>
@@ -455,18 +430,15 @@
   <hr class="legend-divider">
   <div class="legend-row"><div class="legend-swatch" style="background:#BDBDBD"></div><span class="legend-label">データなし</span></div>
   <div id="legend-source">出典: 長崎市オープンデータ（BODIK）</div>
-  </div>
 </div>
 
 
 <!-- 用途地域 Legend -->
-<div id="yoto-legend" class="legend-collapsed">
-  <div class="legend-head" onclick="toggleLegend(this)" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+<div id="yoto-legend">
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
     <h3 style="margin:0;">用途地域</h3>
-    <span class="legend-caret">&#x25BC;</span>
-    <button onclick="event.stopPropagation();closeYotoLegend()" style="background:none;border:none;cursor:pointer;color:#999;font-size:16px;line-height:1;padding:0 0 0 8px;" title="閉じる">&#x00D7;</button>
+    <button onclick="closeYotoLegend()" style="background:none;border:none;cursor:pointer;color:#999;font-size:16px;line-height:1;padding:0 0 0 8px;" title="閉じる">&#x00D7;</button>
   </div>
-  <div class="legend-body">
   <div style="font-size:10px;color:#888;margin-bottom:6px;font-weight:bold;">住居系</div>
   <div class="legend-row"><div class="legend-swatch" style="background:#A8D5A2"></div><span class="legend-label">第一種低層住居専用</span></div>
   <div class="legend-row"><div class="legend-swatch" style="background:#8BC87F"></div><span class="legend-label">第二種低層住居専用</span></div>
@@ -483,32 +455,26 @@
   <div class="legend-row"><div class="legend-swatch" style="background:#7BB3E0"></div><span class="legend-label">工業</span></div>
   <div class="legend-row"><div class="legend-swatch" style="background:#9B8EC4"></div><span class="legend-label">工業専用</span></div>
   <div class="legend-note">2019年時点のデータ（国土数値情報）</div>
-  </div>
 </div>
 
 
 <!-- 空き家発生率 面塗り Legend -->
-<div id="akiya-legend" class="legend-collapsed">
-  <div class="legend-head" onclick="toggleLegend(this)" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+<div id="akiya-legend">
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
     <h3 style="margin:0;">空き家発生率（町丁目）</h3>
-    <span class="legend-caret">&#x25BC;</span>
-    <button onclick="event.stopPropagation();closeAkiyaLegend()" style="background:none;border:none;cursor:pointer;color:#999;font-size:16px;line-height:1;padding:0 0 0 8px;" title="閉じる">&#x00D7;</button>
+    <button onclick="closeAkiyaLegend()" style="background:none;border:none;cursor:pointer;color:#999;font-size:16px;line-height:1;padding:0 0 0 8px;" title="閉じる">&#x00D7;</button>
   </div>
-  <div class="legend-body">
   <div class="legend-row"><div class="legend-swatch" style="background:#FFCDD2"></div><span class="legend-label">10&#x301C;15%</span></div>
   <div class="legend-row"><div class="legend-swatch" style="background:#C62828"></div><span class="legend-label">15%以上</span></div>
   <div class="legend-note">出典: 長崎市空家等対策計画（R8.3）P14-15</div>
-  </div>
 </div>
 
 <!-- バンク登録物件 ピン Legend -->
-<div id="akiya-pin-legend" class="legend-collapsed">
-  <div class="legend-head" onclick="toggleLegend(this)" style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+<div id="akiya-pin-legend">
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
     <h3 style="margin:0;">空き家バンク登録物件</h3>
-    <span class="legend-caret">&#x25BC;</span>
-    <button onclick="event.stopPropagation();closeAkiyaPinLegend()" style="background:none;border:none;cursor:pointer;color:#999;font-size:16px;line-height:1;padding:0 0 0 8px;" title="閉じる">&#x00D7;</button>
+    <button onclick="closeAkiyaPinLegend()" style="background:none;border:none;cursor:pointer;color:#999;font-size:16px;line-height:1;padding:0 0 0 8px;" title="閉じる">&#x00D7;</button>
   </div>
-  <div class="legend-body">
   <div style="font-size:10px;color:#888;margin-bottom:6px;font-weight:bold;">色＝種類</div>
   <div class="akiya-pin-row"><div class="akiya-pin-sample" style="background:#1a6b3c;">　</div><span class="legend-label">空き家（建物あり）</span></div>
   <div class="akiya-pin-row"><div class="akiya-pin-sample" style="background:#C2841C;">　</div><span class="legend-label">空き地（土地のみ）</span></div>
@@ -516,8 +482,7 @@
   <div class="akiya-pin-row"><div class="akiya-pin-sample" style="background:#888;">売</div><span class="legend-label">売買希望</span></div>
   <div class="akiya-pin-row"><div class="akiya-pin-sample" style="background:#888;">賃</div><span class="legend-label">賃貸希望</span></div>
   <div class="akiya-pin-row"><div class="akiya-pin-sample" style="background:#888;">両</div><span class="legend-label">売買・賃貸どちらも可</span></div>
-  <div class="legend-note">出典: 長崎市空き家空き地バンク（公開情報・町丁目単位）<br>クリックで市公式ページへ（番地等は非公開）</div>
-  </div>
+  <div class="legend-note">2026年6月12日時点のデータ<br>出典: 長崎市空き家空き地バンク（公開情報・町丁目単位）<br>クリックで市公式ページへ（番地等は非公開）</div>
 </div>
 
 <!-- Guide -->
@@ -1332,14 +1297,6 @@ function sendTownSearchEvent(townName) {
   try {
     window.parent.postMessage({ event: 'map_town_search', town_name: townName }, 'https://aizen2024.com');
   } catch(e) {}
-}
-
-// 凡例の折りたたみ開閉（スマホのみ。見出しタップで本体を開閉）
-function toggleLegend(headEl) {
-  // PC幅では開閉しない（常時展開）
-  if (window.innerWidth > 600) return;
-  const legend = headEl.closest('#pop-legend, #yoto-legend, #akiya-legend, #akiya-pin-legend');
-  if (legend) legend.classList.toggle('legend-collapsed');
 }
 
 (function initMobile() {
