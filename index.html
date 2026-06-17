@@ -316,7 +316,8 @@
     }
     .viewspot-popup .vs-body { padding:10px 12px; }
     .viewspot-popup .vs-title { font-size:13px; font-weight:700; color:#333; }
-    .viewspot-popup .vs-subtitle { font-size:11px; color:#666; margin:2px 0 8px; }
+    .viewspot-popup .vs-subtitle { font-size:11px; color:#666; margin:2px 0 4px; }
+    .viewspot-popup .vs-shotdate { font-size:10px; color:#999; margin:0 0 8px; }
     .viewspot-popup .vs-link {
       display:block; text-align:center; background:#4A6741; color:#fff;
       padding:8px; border-radius:6px; text-decoration:none; font-size:12px; font-weight:600;
@@ -573,6 +574,9 @@ function loadViewspots() {
           const thumbHtml = p.thumb
             ? '<img class="vs-thumb" src="' + p.thumb + '" alt="' + p.title + '">'
             : '';
+          const shotDateHtml = p.shot_date
+            ? '<div class="vs-shotdate">撮影日: ' + p.shot_date + '</div>'
+            : '';
 
           viewspotCurrentPopup = new maplibregl.Popup({
             closeButton: true, maxWidth: '220px', className: 'viewspot-popup'
@@ -584,6 +588,7 @@ function loadViewspots() {
               '<div class="vs-body">' +
               '<div class="vs-title">' + p.title + '</div>' +
               '<div class="vs-subtitle">' + (p.subtitle || '') + '</div>' +
+              shotDateHtml +
               '<a class="vs-link" href="' + p.url + '" target="_blank" rel="noopener">' + btnLabel + '</a>' +
               '</div></div>'
             )
