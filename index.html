@@ -325,6 +325,16 @@
     .viewspot-popup .vs-link:hover { background:#3a5233; }
     .maplibregl-popup.viewspot-popup .maplibregl-popup-content { padding:0; overflow:hidden; min-width:200px; }
 
+    @media (max-width:600px) {
+      .viewspot-popup .vs-thumb { height:70px; }
+      .viewspot-popup .vs-body { padding:8px 10px; }
+      .viewspot-popup .vs-title { font-size:12px; }
+      .viewspot-popup .vs-subtitle { font-size:10px; margin:1px 0 2px; }
+      .viewspot-popup .vs-shotdate { font-size:9px; margin:0 0 5px; }
+      .viewspot-popup .vs-link { padding:6px; font-size:11px; }
+      .maplibregl-popup.viewspot-popup .maplibregl-popup-content { max-width:180px; }
+    }
+
     /* ── 電停マーカー（長崎電気軌道カラー）VS-2 ── */
     .tram-stop-marker {
       width:30px; height:22px; border-radius:6px;
