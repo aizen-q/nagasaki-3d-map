@@ -739,6 +739,10 @@ function showAerialDestination(destinationId) {
   const dest = ctx.destinations.find(d => d.id === destinationId);
   if (!dest) return;
 
+  // 電停の目的地一覧ポップアップを閉じる（鳥の目ピン・ラインとの重なり防止）
+  if (tramStopCurrentPopup) { tramStopCurrentPopup.remove(); tramStopCurrentPopup = null; }
+  document.querySelectorAll('.tram-stop-marker.active').forEach(e => e.classList.remove('active'));
+
   // 既存の目的地ピンが既にあれば再利用、なければ新規作成
   if (!aerialPinMarkers[destinationId]) {
     const el = document.createElement('div');
