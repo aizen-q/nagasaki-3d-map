@@ -307,7 +307,7 @@
       cursor:pointer;
     }
     .viewspot-marker.type-pano  { background:#1B6E6C; }
-    .viewspot-marker.type-video { background:#C2841C; }
+    .viewspot-marker.type-video { background:#D85A30; }
 
     .viewspot-popup .popup-inner { padding:0; }
     .viewspot-popup .vs-thumb {
@@ -324,6 +324,28 @@
     }
     .viewspot-popup .vs-link:hover { background:#3a5233; }
     .maplibregl-popup.viewspot-popup .maplibregl-popup-content { padding:0; overflow:hidden; min-width:200px; }
+
+    /* ── 電停マーカー（長崎電気軌道カラー）VS-2 ── */
+    .tram-stop-marker {
+      width:30px; height:22px; border-radius:6px;
+      background:#0F6E56;
+      display:flex; align-items:center; justify-content:center;
+      color:#fff; font-size:13px;
+      border:2px solid rgba(255,255,255,0.95);
+      box-shadow:0 2px 6px rgba(0,0,0,0.35);
+      cursor:pointer;
+    }
+    .tram-stop-marker.active { background:#0a5544; }
+
+    .tram-stop-popup .popup-inner { padding:10px 12px; }
+    .tram-stop-popup .ts-title { font-size:13px; font-weight:700; color:#333; margin-bottom:8px; }
+    .tram-stop-popup .ts-dest-list { display:flex; flex-direction:column; gap:6px; }
+    .tram-stop-popup .ts-dest-btn {
+      display:block; width:100%; text-align:left;
+      background:#f5f5f0; border:1px solid #e0e0e0; border-radius:8px;
+      padding:8px 10px; font-size:12px; color:#333; cursor:pointer;
+    }
+    .tram-stop-popup .ts-dest-btn:hover { background:#eef0ea; border-color:#0F6E56; }
   </style>
 </head>
 <body>
@@ -612,6 +634,175 @@ function sendViewspotClickEvent(spotType, title) {
       spot_title: title
     }, 'https://aizen2024.com');
   } catch(e) {}
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// 電停ハブ → 鳥の目動画ピン（VS-2）
+// 電停は常時表示。クリックでポップアップ内に目的地一覧を表示し、
+// 目的地を選ぶとマップ上に鳥の目ピン＋ライン（電停～目的地）が出現する。
+// 鳥の目ピンをクリックすると既存のviewspot-popup（サムネイル＋外部リンク）と
+// 同じ流儀でYouTubeページを新タブで開く。
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+const TRAM_STOPS_URL = 'https://aizen2024.com/wp-content/uploads/2026/06/tram_stops.geojson';
+
+let tramStopMarkers = [];
+let tramStopCurrentPopup = null;
+let aerialPinMarkers = {};   // destinationId -> maplibregl.Marker
+let aerialLineSourceAdded = false;
+let aerialCurrentPopup = null;
+
+function loadTramStops() {
+  fetch(TRAM_STOPS_URL)
+    .then(r => { if (!r.ok) throw new Error('fetch failed: tram_stops'); return r.json(); })
+    .then(geojson => {
+      // ライン描画用の空のGeoJSONソース・レイヤーを先に用意
+      if (!aerialLineSourceAdded) {
+        map.addSource('aerial-route', {
+          type: 'geojson',
+          data: { type: 'FeatureCollection', features: [] }
+        });
+        map.addLayer({
+          id: 'aerial-route-line',
+          type: 'line',
+          source: 'aerial-route',
+          layout: { visibility: 'none' },
+          paint: {
+            'line-color': '#0F6E56',
+            'line-width': 2,
+            'line-dasharray': [2, 2],
+            'line-opacity': 0.8
+          }
+        });
+        aerialLineSourceAdded = true;
+      }
+
+      geojson.features.forEach(f => {
+        const p = f.properties;
+        const [lng, lat] = f.geometry.coordinates;
+
+        const el = document.createElement('div');
+        el.className = 'tram-stop-marker';
+        el.textContent = '\u{1F68B}'; // 🚋
+        el.title = p.stop_name;
+
+        const marker = new maplibregl.Marker({ element: el })
+          .setLngLat([lng, lat])
+          .addTo(map);
+
+        el.addEventListener('click', (ev) => {
+          ev.stopPropagation();
+          onTramStopClick(p, [lng, lat], el);
+        });
+
+        tramStopMarkers.push(marker);
+      });
+    })
+    .catch(err => console.error('Tram stops GeoJSON error:', err));
+}
+
+function onTramStopClick(stopProps, stopCoords, markerEl) {
+  // 既存の他ポップアップを閉じる（既存パターンに合わせて統一）
+  if (tramStopCurrentPopup) tramStopCurrentPopup.remove();
+  if (currentPopup) { currentPopup.remove(); currentPopup = null; }
+  if (akiyaCurrentPopup) { akiyaCurrentPopup.remove(); akiyaCurrentPopup = null; }
+  if (viewspotCurrentPopup) { viewspotCurrentPopup.remove(); viewspotCurrentPopup = null; }
+  if (aerialCurrentPopup) { aerialCurrentPopup.remove(); aerialCurrentPopup = null; }
+
+  document.querySelectorAll('.tram-stop-marker.active').forEach(e => e.classList.remove('active'));
+  markerEl.classList.add('active');
+
+  const destinations = stopProps.destinations || [];
+  const listHtml = destinations.map(d =>
+    '<button class="ts-dest-btn" onclick="showAerialDestination(\'' + d.id + '\')">' + d.title + '</button>'
+  ).join('');
+
+  tramStopCurrentPopup = new maplibregl.Popup({
+    closeButton: true, maxWidth: '220px', className: 'tram-stop-popup'
+  })
+    .setLngLat(stopCoords)
+    .setHTML(
+      '<div class="popup-inner">' +
+      '<div class="ts-title">' + stopProps.stop_name + ' から見る空撮</div>' +
+      '<div class="ts-dest-list">' + listHtml + '</div>' +
+      '</div>'
+    )
+    .addTo(map);
+
+  // 現在の電停情報を一時保持（目的地ピン生成時にライン描画で使う）
+  window._currentTramStopContext = { stopCoords, destinations };
+}
+
+function showAerialDestination(destinationId) {
+  const ctx = window._currentTramStopContext;
+  if (!ctx) return;
+  const dest = ctx.destinations.find(d => d.id === destinationId);
+  if (!dest) return;
+
+  // 既存の目的地ピンが既にあれば再利用、なければ新規作成
+  if (!aerialPinMarkers[destinationId]) {
+    const el = document.createElement('div');
+    el.className = 'viewspot-marker type-video';
+    el.textContent = '\u{1F3A5}'; // 🎥
+    el.title = dest.title;
+
+    const marker = new maplibregl.Marker({ element: el })
+      .setLngLat(dest.coordinates)
+      .addTo(map);
+
+    el.addEventListener('click', (ev) => {
+      ev.stopPropagation();
+      openAerialPopup(dest);
+    });
+
+    aerialPinMarkers[destinationId] = marker;
+  }
+
+  // ライン描画（電停 ⇔ 目的地）
+  map.getSource('aerial-route').setData({
+    type: 'FeatureCollection',
+    features: [{
+      type: 'Feature',
+      geometry: {
+        type: 'LineString',
+        coordinates: [ctx.stopCoords, dest.coordinates]
+      },
+      properties: {}
+    }]
+  });
+  map.setLayoutProperty('aerial-route-line', 'visibility', 'visible');
+
+  // 目的地ピンのポップアップも続けて開く
+  openAerialPopup(dest);
+}
+
+function openAerialPopup(dest) {
+  if (aerialCurrentPopup) aerialCurrentPopup.remove();
+
+  const thumbHtml = dest.thumb
+    ? '<img class="vs-thumb" src="' + dest.thumb + '" alt="' + dest.title + '">'
+    : '';
+  const shotDateHtml = dest.shot_date
+    ? '<div class="vs-shotdate">撮影日: ' + dest.shot_date + '</div>'
+    : '';
+
+  aerialCurrentPopup = new maplibregl.Popup({
+    closeButton: true, maxWidth: '220px', className: 'viewspot-popup'
+  })
+    .setLngLat(dest.coordinates)
+    .setHTML(
+      '<div class="popup-inner">' +
+      thumbHtml +
+      '<div class="vs-body">' +
+      '<div class="vs-title">' + dest.title + '</div>' +
+      '<div class="vs-subtitle">' + (dest.subtitle || '') + '</div>' +
+      shotDateHtml +
+      '<a class="vs-link" href="' + dest.youtube_url + '" target="_blank" rel="noopener">動画を見る</a>' +
+      '</div></div>'
+    )
+    .addTo(map);
+
+  sendViewspotClickEvent('video', dest.title);
 }
 
 
@@ -920,6 +1111,7 @@ map.on('load', () => {
 
   loadTownData();
   loadViewspots();
+  loadTramStops();
   document.getElementById('loading').style.display = 'none';
   setTimeout(collapseGuide, 10000);
 });
