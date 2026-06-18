@@ -346,6 +346,16 @@
       padding:8px 10px; font-size:12px; color:#333; cursor:pointer;
     }
     .tram-stop-popup .ts-dest-btn:hover { background:#eef0ea; border-color:#0F6E56; }
+
+    /* 鳥の目ピン出現アニメーション */
+    @keyframes aerialPinDrop {
+      0%   { transform: scale(0.2) translateY(-16px); opacity: 0; }
+      60%  { transform: scale(1.15) translateY(0); opacity: 1; }
+      100% { transform: scale(1) translateY(0); opacity: 1; }
+    }
+    .viewspot-marker.aerial-pin-enter {
+      animation: aerialPinDrop 0.5s ease-out;
+    }
   </style>
 </head>
 <body>
@@ -714,7 +724,7 @@ function onTramStopClick(stopProps, stopCoords, markerEl) {
 
   const destinations = stopProps.destinations || [];
   const listHtml = destinations.map(d =>
-    '<button class="ts-dest-btn" onclick="event.stopPropagation(); showAerialDestination(\'' + d.id + '\')">' + d.title + '</button>'
+    '<button class="ts-dest-btn" onclick="event.stopPropagation(); showAerialDestination(\'' + d.id + '\')">' + d.title + ' へ飛ぶ</button>'
   ).join('');
 
   tramStopCurrentPopup = new maplibregl.Popup({
@@ -743,8 +753,10 @@ function showAerialDestination(destinationId) {
   if (tramStopCurrentPopup) { tramStopCurrentPopup.remove(); tramStopCurrentPopup = null; }
   document.querySelectorAll('.tram-stop-marker.active').forEach(e => e.classList.remove('active'));
 
+  const isNewPin = !aerialPinMarkers[destinationId];
+
   // 既存の目的地ピンが既にあれば再利用、なければ新規作成
-  if (!aerialPinMarkers[destinationId]) {
+  if (isNewPin) {
     const el = document.createElement('div');
     el.className = 'viewspot-marker type-video';
     el.textContent = '\u{1F3A5}'; // 🎥
@@ -762,22 +774,53 @@ function showAerialDestination(destinationId) {
     aerialPinMarkers[destinationId] = marker;
   }
 
-  // ライン描画（電停 ⇔ 目的地）
-  map.getSource('aerial-route').setData({
-    type: 'FeatureCollection',
-    features: [{
-      type: 'Feature',
-      geometry: {
-        type: 'LineString',
-        coordinates: [ctx.stopCoords, dest.coordinates]
-      },
-      properties: {}
-    }]
+  // ライン：電停→目的地へ滑空するように線形補間でアニメーション表示
+  animateAerialRoute(ctx.stopCoords, dest.coordinates, () => {
+    // ライン到達後、ピンをふわっと出現させる（既存ピンの再選択時はスキップ）
+    if (isNewPin) {
+      const pinEl = aerialPinMarkers[destinationId].getElement();
+      pinEl.classList.remove('aerial-pin-enter');
+      // リフローを挟んでアニメーションを再トリガー
+      void pinEl.offsetWidth;
+      pinEl.classList.add('aerial-pin-enter');
+    }
+    // 目的地ピンのポップアップを開く
+    openAerialPopup(dest);
   });
+}
+
+function animateAerialRoute(fromCoords, toCoords, onComplete) {
   map.setLayoutProperty('aerial-route-line', 'visibility', 'visible');
 
-  // 目的地ピンのポップアップも続けて開く
-  openAerialPopup(dest);
+  const durationMs = 450;
+  const startTime = performance.now();
+
+  function step(now) {
+    const t = Math.min(1, (now - startTime) / durationMs);
+    // easeOutQuad
+    const eased = 1 - (1 - t) * (1 - t);
+    const currentEnd = [
+      fromCoords[0] + (toCoords[0] - fromCoords[0]) * eased,
+      fromCoords[1] + (toCoords[1] - fromCoords[1]) * eased
+    ];
+
+    map.getSource('aerial-route').setData({
+      type: 'FeatureCollection',
+      features: [{
+        type: 'Feature',
+        geometry: { type: 'LineString', coordinates: [fromCoords, currentEnd] },
+        properties: {}
+      }]
+    });
+
+    if (t < 1) {
+      requestAnimationFrame(step);
+    } else if (onComplete) {
+      onComplete();
+    }
+  }
+
+  requestAnimationFrame(step);
 }
 
 function openAerialPopup(dest) {
