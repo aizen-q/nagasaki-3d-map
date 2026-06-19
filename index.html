@@ -810,22 +810,41 @@ function showAerialDestination(destinationId) {
     aerialPinMarkers[destinationId] = marker;
   }
 
-  // ライン：電停→目的地へ滑空するように線形補間でアニメーション表示
-  animateAerialRoute(ctx.stopCoords, dest.coordinates, () => {
-    // ライン到達後、ピンをふわっと出現させる（既存ピンの再選択時はスキップ）
-    if (isNewPin) {
-      const pinEl = aerialPinMarkers[destinationId].getElement();
-      pinEl.classList.remove('aerial-pin-enter');
-      // リフローを挟んでアニメーションを再トリガー
-      void pinEl.offsetWidth;
-      pinEl.classList.add('aerial-pin-enter');
-      // ピン出現アニメーション（0.5s）完了後にポップアップを開く
-      setTimeout(() => openAerialPopup(dest), 520);
-    } else {
-      // 既存ピンの再選択時はすぐに開く
-      openAerialPopup(dest);
-    }
-  });
+  // 電停と目的地の両方が画面内に収まるようにズーム調整
+  const bounds = [
+    [Math.min(ctx.stopCoords[0], dest.coordinates[0]), Math.min(ctx.stopCoords[1], dest.coordinates[1])],
+    [Math.max(ctx.stopCoords[0], dest.coordinates[0]), Math.max(ctx.stopCoords[1], dest.coordinates[1])]
+  ];
+  const currentBounds = map.getBounds();
+  const bothVisible =
+    currentBounds.contains(ctx.stopCoords) &&
+    currentBounds.contains(dest.coordinates);
+
+  function startAnimation() {
+    // ライン：電停→目的地へ滑空するように線形補間でアニメーション表示
+    animateAerialRoute(ctx.stopCoords, dest.coordinates, () => {
+      // ライン到達後、ピンをふわっと出現させる（既存ピンの再選択時はスキップ）
+      if (isNewPin) {
+        const pinEl = aerialPinMarkers[destinationId].getElement();
+        pinEl.classList.remove('aerial-pin-enter');
+        // リフローを挟んでアニメーションを再トリガー
+        void pinEl.offsetWidth;
+        pinEl.classList.add('aerial-pin-enter');
+        // ピン出現アニメーション（0.5s）完了後にポップアップを開く
+        setTimeout(() => openAerialPopup(dest), 520);
+      } else {
+        // 既存ピンの再選択時はすぐに開く
+        openAerialPopup(dest);
+      }
+    });
+  }
+
+  if (!bothVisible) {
+    map.fitBounds(bounds, { padding: 120, pitch: 30, duration: 800, maxZoom: 12 });
+    map.once('moveend', startAnimation);
+  } else {
+    startAnimation();
+  }
 }
 
 function animateAerialRoute(fromCoords, toCoords, onComplete) {
