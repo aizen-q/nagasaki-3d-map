@@ -1,0 +1,47 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {
+        "stop_name": "長崎駅前電停",
+        "destinations": [
+          {
+            "id": "aerial-001",
+            "title": "立山3丁目",
+            "subtitle": "電停から徒歩圏・斜面地の暮らし",
+            "coordinates": [129.879171, 32.756518],
+            "shot_date": "2026年5月4日",
+            "youtube_url": "https://youtube.com/shorts/kU26RNzeHtw",
+            "thumb": "https://aizen2024.com/wp-content/uploads/2026/06/aerial-001-thumb.jpg"
+          }
+        ]
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [129.871808, 32.752518]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "stop_name": "西浦上駅電停",
+        "destinations": [
+          {
+            "id": "aerial-002",
+            "title": "坂本2丁目",
+            "subtitle": "電停から徒歩圏・斜面地の暮らし",
+            "coordinates": [129.871147, 32.766355],
+            "shot_date": "2026年5月15日",
+            "youtube_url": "https://youtube.com/shorts/_ekMrPPlfTE",
+            "thumb": "https://aizen2024.com/wp-content/uploads/2026/06/aerial-002-thumb.jpg"
+          }
+        ]
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [129.864154, 32.765554]
+      }
+    }
+  ]
+}
