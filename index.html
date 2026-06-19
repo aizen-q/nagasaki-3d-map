@@ -910,6 +910,14 @@ function openAerialPopup(dest) {
   sendViewspotClickEvent('video', dest.title);
 }
 
+function hideAerialRoute() {
+  if (aerialLineSourceAdded) {
+    map.setLayoutProperty('aerial-route-line', 'visibility', 'none');
+    map.setLayoutProperty('aerial-route-line-shadow', 'visibility', 'none');
+  }
+  if (aerialBirdMarker) aerialBirdMarker.getElement().style.display = 'none';
+  if (aerialCurrentPopup) { aerialCurrentPopup.remove(); aerialCurrentPopup = null; }
+}
 
 // 既存の onPopToggle / onYotoToggle と同じ
 //   ・ON時に他のトグルをOFFにする（排他制御）
@@ -1102,6 +1110,7 @@ function onAkiyaToggle(checked) {
       pendingAkiyaVisibility = false;
     }
   }
+  hideAerialRoute();
 }
 
 function closeAkiyaLegend() {
@@ -1482,6 +1491,7 @@ function resetView() {
   document.getElementById('area-info').classList.remove('active');
   selectedTown = null;
   if (currentPopup) { currentPopup.remove(); currentPopup = null; }
+  hideAerialRoute();
 }
 
 function loadYotoLayer() {
@@ -1579,6 +1589,7 @@ function onYotoToggle(checked) {
       pendingYotoVisibility = false;
     }
   }
+  hideAerialRoute();
 }
 
 function closeYotoLegend() {
@@ -1633,6 +1644,7 @@ function onPopToggle(checked) {
     // ── 追加: area-info パネルを非表示 ──
     document.getElementById('area-info').classList.remove('active');
   }
+  hideAerialRoute();
 }
 
 function collapseGuide() {
@@ -1693,6 +1705,7 @@ function clearSelection() {
   document.querySelectorAll('.quick-btn').forEach(b => b.classList.remove('active'));
   selectedTown = null;
   if (currentPopup) { currentPopup.remove(); currentPopup = null; }
+  hideAerialRoute();
 }
 
 function closeLegend() {
