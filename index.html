@@ -671,6 +671,7 @@ let tramStopCurrentPopup = null;
 let aerialPinMarkers = {};   // destinationId -> maplibregl.Marker
 let aerialLineSourceAdded = false;
 let aerialCurrentPopup = null;
+let aerialBirdMarker = null; // 🐦 先端を飛ぶ鳥マーカー
 
 function loadTramStops() {
   fetch(TRAM_STOPS_URL)
@@ -688,10 +689,10 @@ function loadTramStops() {
           source: 'aerial-route',
           layout: { visibility: 'none' },
           paint: {
-            'line-color': '#0F6E56',
-            'line-width': 2,
+            'line-color': '#ffffff',
+            'line-width': 3,
             'line-dasharray': [2, 2],
-            'line-opacity': 0.8
+            'line-opacity': 0.95
           }
         });
         aerialLineSourceAdded = true;
@@ -805,7 +806,20 @@ function showAerialDestination(destinationId) {
 function animateAerialRoute(fromCoords, toCoords, onComplete) {
   map.setLayoutProperty('aerial-route-line', 'visibility', 'visible');
 
-  const durationMs = 450;
+  // 🐦 鳥マーカーを生成（初回のみ）
+  if (!aerialBirdMarker) {
+    const birdEl = document.createElement('div');
+    birdEl.style.cssText = 'font-size:22px;line-height:1;filter:drop-shadow(0 1px 3px rgba(0,0,0,0.5));';
+    birdEl.textContent = '🐦';
+    aerialBirdMarker = new maplibregl.Marker({ element: birdEl, anchor: 'center' })
+      .setLngLat(fromCoords)
+      .addTo(map);
+  } else {
+    aerialBirdMarker.setLngLat(fromCoords);
+    aerialBirdMarker.getElement().style.display = 'block';
+  }
+
+  const durationMs = 1200;
   const startTime = performance.now();
 
   function step(now) {
@@ -826,10 +840,15 @@ function animateAerialRoute(fromCoords, toCoords, onComplete) {
       }]
     });
 
+    // 🐦 鳥を先端に追従させる
+    aerialBirdMarker.setLngLat(currentEnd);
+
     if (t < 1) {
       requestAnimationFrame(step);
-    } else if (onComplete) {
-      onComplete();
+    } else {
+      // アニメーション完了後、鳥を非表示にする
+      aerialBirdMarker.getElement().style.display = 'none';
+      if (onComplete) onComplete();
     }
   }
 
