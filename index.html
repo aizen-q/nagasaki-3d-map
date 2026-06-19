@@ -219,7 +219,7 @@
       #panel-close { display:block !important; }
       #toggle-btn { display:flex; align-items:center; justify-content:center; }
       #pc-toggle { display:none !important; }
-      #guide { display:none !important; }
+      #guide { display:none; }
       #guide-toggle { bottom:16px; right:16px; }
       #pop-legend { bottom:16px; left:12px; }
       #yoto-legend { bottom:16px; left:12px; right:auto; max-height:50vh; }
@@ -793,9 +793,12 @@ function showAerialDestination(destinationId) {
       // リフローを挟んでアニメーションを再トリガー
       void pinEl.offsetWidth;
       pinEl.classList.add('aerial-pin-enter');
+      // ピン出現アニメーション（0.5s）完了後にポップアップを開く
+      setTimeout(() => openAerialPopup(dest), 520);
+    } else {
+      // 既存ピンの再選択時はすぐに開く
+      openAerialPopup(dest);
     }
-    // 目的地ピンのポップアップを開く
-    openAerialPopup(dest);
   });
 }
 
@@ -1588,11 +1591,11 @@ function onPopToggle(checked) {
 }
 
 function collapseGuide() {
-  document.getElementById('guide').style.display = 'none';
+  document.getElementById('guide').style.setProperty('display', 'none', 'important');
   document.getElementById('guide-toggle').style.display = 'block';
 }
 function expandGuide() {
-  document.getElementById('guide').style.display = 'block';
+  document.getElementById('guide').style.setProperty('display', 'block', 'important');
   document.getElementById('guide-toggle').style.display = 'none';
 }
 function togglePanel() {
@@ -1667,6 +1670,7 @@ function sendTownSearchEvent(townName) {
 </script>
 
 <!-- PWA: Service Worker 登録 -->
+<!-- ※ sw.js の CACHE_VERSION を v5 → v6 に上げてからアップロードすること -->
 <script>
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', function () {
