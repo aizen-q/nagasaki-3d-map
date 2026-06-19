@@ -760,7 +760,7 @@ function onTramStopClick(stopProps, stopCoords, markerEl) {
 
   const destinations = stopProps.destinations || [];
   const listHtml = destinations.map(d =>
-    '<button class="ts-dest-btn" onclick="event.stopPropagation(); showAerialDestination(\'' + d.id + '\')">' + d.title + ' へ飛ぶ</button>'
+    '<button class="ts-dest-btn" onclick="event.stopPropagation(); showAerialDestination(\'' + d.id + '\')">' + (d.btn_label || d.title + ' へ飛ぶ') + '</button>'
   ).join('');
 
   tramStopCurrentPopup = new maplibregl.Popup({
