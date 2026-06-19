@@ -836,7 +836,7 @@ function animateAerialRoute(fromCoords, toCoords, onComplete) {
   if (!aerialBirdMarker) {
     const birdEl = document.createElement('div');
     birdEl.style.cssText = 'font-size:26px;line-height:1;filter:drop-shadow(0 2px 4px rgba(0,0,0,0.6));';
-    birdEl.textContent = '🐦';
+    birdEl.textContent = '🕊️';
     aerialBirdMarker = new maplibregl.Marker({ element: birdEl, anchor: 'center' })
       .setLngLat(fromCoords)
       .addTo(map);
