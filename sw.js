@@ -4,7 +4,7 @@
 //               地図タイルはネットワーク優先・フォールバックキャッシュ
 // =============================================
 
-const CACHE_VERSION = 'v12';
+const CACHE_VERSION = 'v13';
 const SHELL_CACHE   = `shell-${CACHE_VERSION}`;
 const TILE_CACHE    = `tiles-${CACHE_VERSION}`;
 
