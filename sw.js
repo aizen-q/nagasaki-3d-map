@@ -1,10 +1,11 @@
 // =============================================
 // sw.js — あいぜん不動産 長崎市3Dエリアマップ
-// キャッシュ戦略: Shell は即時キャッシュ、
+// キャッシュ戦略: index.html はネットワーク優先（常に最新を配信）、
+//               その他シェルはキャッシュ優先、
 //               地図タイルはネットワーク優先・フォールバックキャッシュ
 // =============================================
 
-const CACHE_VERSION = 'v18';
+const CACHE_VERSION = 'v19';
 const SHELL_CACHE   = `shell-${CACHE_VERSION}`;
 const TILE_CACHE    = `tiles-${CACHE_VERSION}`;
 
@@ -58,14 +59,22 @@ self.addEventListener('fetch', event => {
     return;
   }
 
-  // ② アプリシェル（同一オリジン）
+  // ② index.html（同一オリジン）
+  //    → ネットワーク優先（常に最新を取得）、失敗時のみキャッシュ
+  if (url.origin === self.location.origin &&
+      (url.pathname === '/nagasaki-3d-map/' || url.pathname === '/nagasaki-3d-map/index.html')) {
+    event.respondWith(networkFirstShell(request));
+    return;
+  }
+
+  // ③ その他アプリシェル（同一オリジン）
   //    → キャッシュ優先、なければネットワーク
   if (url.origin === self.location.origin) {
     event.respondWith(cacheFirst(request));
     return;
   }
 
-  // ③ その他外部リソース（MapLibre CDN 等）
+  // ④ その他外部リソース（MapLibre CDN 等）
   //    → ネットワーク優先
   event.respondWith(
     fetch(request).catch(() => caches.match(request))
@@ -90,7 +99,26 @@ function isTileRequest(url) {
   );
 }
 
-/** キャッシュ優先（アプリシェル用） */
+/** ネットワーク優先（index.html用）― 失敗時はキャッシュにフォールバック */
+async function networkFirstShell(request) {
+  try {
+    const response = await fetch(request);
+    if (response.ok) {
+      const cache = await caches.open(SHELL_CACHE);
+      cache.put(request, response.clone());
+    }
+    return response;
+  } catch {
+    const cached = await caches.match(request);
+    if (cached) return cached;
+    return new Response('オフラインです。ネットワーク接続を確認してください。', {
+      status: 503,
+      headers: { 'Content-Type': 'text/plain; charset=utf-8' }
+    });
+  }
+}
+
+/** キャッシュ優先（その他アプリシェル用） */
 async function cacheFirst(request) {
   const cached = await caches.match(request);
   if (cached) return cached;
