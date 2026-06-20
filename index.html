@@ -1758,7 +1758,7 @@ function sendTownSearchEvent(townName) {
 </script>
 
 <!-- PWA: Service Worker 登録 -->
-<!-- ※ sw.js の CACHE_VERSION を v5 → v6 に上げてからアップロードすること -->
+<!-- ※ sw.js の CACHE_VERSION を毎回1上げてからアップロードすること（現在 v19） -->
 <script>
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', function () {
