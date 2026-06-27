@@ -483,7 +483,7 @@
           <span class="toggle-thumb"></span>
         </label>
       </div>
-      <div class="toggle-note">2019年時点のデータ（国土数値情報）</div>
+      <div class="toggle-note">2024年時点のデータ（国土数値情報）</div>
     </div>
 
     <!-- Akiya bank toggle（用途地域トグルの直後に追加） -->
@@ -544,13 +544,13 @@
   <div class="legend-row"><div class="legend-swatch" style="background:#C2E68C"></div><span class="legend-label">第二種住居</span></div>
   <div class="legend-row"><div class="legend-swatch" style="background:#E8F5A0"></div><span class="legend-label">準住居</span></div>
   <div style="font-size:10px;color:#888;margin:6px 0 6px 0;font-weight:bold;">商業系</div>
-  <div class="legend-row"><div class="legend-swatch" style="background:#FFCC80"></div><span class="legend-label">近隣商業</span></div>
-  <div class="legend-row"><div class="legend-swatch" style="background:#FF9800"></div><span class="legend-label">商業</span></div>
+  <div class="legend-row"><div class="legend-swatch" style="background:#FF9800"></div><span class="legend-label">近隣商業</span></div>
+  <div class="legend-row"><div class="legend-swatch" style="background:#B3D4F5"></div><span class="legend-label">商業</span></div>
   <div style="font-size:10px;color:#888;margin:6px 0 6px 0;font-weight:bold;">工業系</div>
-  <div class="legend-row"><div class="legend-swatch" style="background:#B3D4F5"></div><span class="legend-label">準工業</span></div>
-  <div class="legend-row"><div class="legend-swatch" style="background:#7BB3E0"></div><span class="legend-label">工業</span></div>
-  <div class="legend-row"><div class="legend-swatch" style="background:#9B8EC4"></div><span class="legend-label">工業専用</span></div>
-  <div class="legend-note">2019年時点のデータ（国土数値情報）</div>
+  <div class="legend-row"><div class="legend-swatch" style="background:#7BB3E0"></div><span class="legend-label">準工業</span></div>
+  <div class="legend-row"><div class="legend-swatch" style="background:#9B8EC4"></div><span class="legend-label">工業</span></div>
+  <div class="legend-row"><div class="legend-swatch" style="background:#7A6BAE"></div><span class="legend-label">工業専用</span></div>
+  <div class="legend-note">2024年時点のデータ（国土数値情報）</div>
 </div>
 
 
@@ -1209,21 +1209,21 @@ let layersReady = false;
 let pendingPopVisibility = true;  // デフォルトON
 let yotoLayerReady = false;
 let pendingYotoVisibility = false;
-const YOTO_URL = 'https://aizen2024.com/wp-content/uploads/2025/10/nagasaki_yoto_chiiki.geojson';
+const YOTO_URL = 'https://aizen2024.com/wp-content/uploads/2026/06/nagasaki_yoto_chiiki.geojson';
 const YOTO_COLOR = [
-  'match', ['get', 'code'],
-  1, '#A8D5A2',
-  2, '#8BC87F',
-  3, '#C5E8A0',
-  4, '#B2DE89',
-  5, '#D4EFA8',
-  6, '#C2E68C',
-  7, '#E8F5A0',
-  8, '#FFCC80',
-  9, '#FF9800',
+  'match', ['get', 'YoutoCode'],
+  1,  '#A8D5A2',
+  2,  '#8BC87F',
+  3,  '#C5E8A0',
+  4,  '#B2DE89',
+  5,  '#D4EFA8',
+  6,  '#C2E68C',
+  7,  '#E8F5A0',
+  9,  '#FF9800',
   10, '#B3D4F5',
   11, '#7BB3E0',
   12, '#9B8EC4',
+  13, '#7A6BAE',
   '#CCCCCC'
 ];
 let currentPopup = null;
@@ -1559,7 +1559,7 @@ function loadYotoLayer() {
         if (selectedTown) return;
         if (currentPopup) currentPopup.remove();
 
-        const yotoName = e.features[0].properties.name || '不明';
+        const yotoName = e.features[0].properties.YoutoName || '不明';
         const townFeatures = map.queryRenderedFeatures(e.point, { layers: ['pop-fill'] });
         const townName = townFeatures.length ? (townFeatures[0].properties.S_NAME || '') : '';
 
@@ -1576,7 +1576,7 @@ function loadYotoLayer() {
             '<div style="padding:10px 12px;min-width:160px;">' +
             '<div style="font-size:13px;font-weight:bold;color:#333;">' + yotoName + '</div>' +
             townLine +
-            '<div style="font-size:10px;color:#aaa;margin-top:6px;">2019年時点（国土数値情報）</div>' +
+            '<div style="font-size:10px;color:#aaa;margin-top:6px;">2024年時点のデータ（国土数値情報）</div>' +
             '</div>'
           )
           .addTo(map);
@@ -1761,7 +1761,7 @@ function sendTownSearchEvent(townName) {
 </script>
 
 <!-- PWA: Service Worker 登録 -->
-<!-- ※ sw.js の CACHE_VERSION を毎回1上げてからアップロードすること（現在 v19） -->
+<!-- ※ sw.js の CACHE_VERSION を毎回1上げてからアップロードすること（現在 v21） -->
 <script>
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', function () {
