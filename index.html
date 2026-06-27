@@ -536,20 +536,20 @@
     <button onclick="closeYotoLegend()" style="background:none;border:none;cursor:pointer;color:#999;font-size:16px;line-height:1;padding:0 0 0 8px;" title="閉じる">&#x00D7;</button>
   </div>
   <div style="font-size:10px;color:#888;margin-bottom:6px;font-weight:bold;">住居系</div>
-  <div class="legend-row"><div class="legend-swatch" style="background:#A8D5A2"></div><span class="legend-label">第一種低層住居専用</span></div>
+  <div class="legend-row"><div class="legend-swatch" style="background:#5BAD5B"></div><span class="legend-label">第一種低層住居専用</span></div>
   <div class="legend-row"><div class="legend-swatch" style="background:#8BC87F"></div><span class="legend-label">第二種低層住居専用</span></div>
   <div class="legend-row"><div class="legend-swatch" style="background:#C5E8A0"></div><span class="legend-label">第一種中高層住居専用</span></div>
-  <div class="legend-row"><div class="legend-swatch" style="background:#B2DE89"></div><span class="legend-label">第二種中高層住居専用</span></div>
-  <div class="legend-row"><div class="legend-swatch" style="background:#D4EFA8"></div><span class="legend-label">第一種住居</span></div>
-  <div class="legend-row"><div class="legend-swatch" style="background:#C2E68C"></div><span class="legend-label">第二種住居</span></div>
-  <div class="legend-row"><div class="legend-swatch" style="background:#E8F5A0"></div><span class="legend-label">準住居</span></div>
+  <div class="legend-row"><div class="legend-swatch" style="background:#DDEEBB"></div><span class="legend-label">第二種中高層住居専用</span></div>
+  <div class="legend-row"><div class="legend-swatch" style="background:#F5F5C0"></div><span class="legend-label">第一種住居</span></div>
+  <div class="legend-row"><div class="legend-swatch" style="background:#EDE888"></div><span class="legend-label">第二種住居</span></div>
+  <div class="legend-row"><div class="legend-swatch" style="background:#E8C870"></div><span class="legend-label">準住居</span></div>
   <div style="font-size:10px;color:#888;margin:6px 0 6px 0;font-weight:bold;">商業系</div>
-  <div class="legend-row"><div class="legend-swatch" style="background:#FF9800"></div><span class="legend-label">近隣商業</span></div>
-  <div class="legend-row"><div class="legend-swatch" style="background:#B3D4F5"></div><span class="legend-label">商業</span></div>
+  <div class="legend-row"><div class="legend-swatch" style="background:#C8A070"></div><span class="legend-label">近隣商業</span></div>
+  <div class="legend-row"><div class="legend-swatch" style="background:#E89858"></div><span class="legend-label">商業</span></div>
   <div style="font-size:10px;color:#888;margin:6px 0 6px 0;font-weight:bold;">工業系</div>
-  <div class="legend-row"><div class="legend-swatch" style="background:#7BB3E0"></div><span class="legend-label">準工業</span></div>
-  <div class="legend-row"><div class="legend-swatch" style="background:#9B8EC4"></div><span class="legend-label">工業</span></div>
-  <div class="legend-row"><div class="legend-swatch" style="background:#7A6BAE"></div><span class="legend-label">工業専用</span></div>
+  <div class="legend-row"><div class="legend-swatch" style="background:#C0C8E8"></div><span class="legend-label">準工業</span></div>
+  <div class="legend-row"><div class="legend-swatch" style="background:#9898D0"></div><span class="legend-label">工業</span></div>
+  <div class="legend-row"><div class="legend-swatch" style="background:#7878B8"></div><span class="legend-label">工業専用</span></div>
   <div class="legend-note">2024年時点のデータ（国土数値情報）</div>
 </div>
 
@@ -1212,18 +1212,18 @@ let pendingYotoVisibility = false;
 const YOTO_URL = 'https://aizen2024.com/wp-content/uploads/2026/06/nagasaki_yoto_chiiki.geojson';
 const YOTO_COLOR = [
   'match', ['get', 'YoutoCode'],
-  1,  '#A8D5A2',
+  1,  '#5BAD5B',
   2,  '#8BC87F',
   3,  '#C5E8A0',
-  4,  '#B2DE89',
-  5,  '#D4EFA8',
-  6,  '#C2E68C',
-  7,  '#E8F5A0',
-  9,  '#FF9800',
-  10, '#B3D4F5',
-  11, '#7BB3E0',
-  12, '#9B8EC4',
-  13, '#7A6BAE',
+  4,  '#DDEEBB',
+  5,  '#F5F5C0',
+  6,  '#EDE888',
+  7,  '#E8C870',
+  9,  '#C8A070',
+  10, '#E89858',
+  11, '#C0C8E8',
+  12, '#9898D0',
+  13, '#7878B8',
   '#CCCCCC'
 ];
 let currentPopup = null;
