@@ -15,6 +15,7 @@
   <title>長崎市 3Dエリアマップ | あいぜん不動産</title>
   <link href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" rel="stylesheet">
   <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@turf/turf@6/turf.min.js"></script>
   <style>
     * { margin:0; padding:0; box-sizing:border-box; }
     html, body { width:100%; height:100%; overflow:hidden; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
@@ -279,7 +280,7 @@
     }
     #akiya-pin-legend.visible { display:block; }
     #akiya-pin-legend h3 { font-size:11px; font-weight:700; color:#333; margin:0 0 6px 0; }
-    #akiya-pin-legend .legend-note { font-size:9px; color:#aaa; margin-top:6px; }
+    #akiya-pin-legend .legend-note { font-size:11px; color:#c0392b; font-weight:600; margin-top:6px; line-height:1.5; }
     .akiya-pin-row { display:flex; align-items:center; gap:8px; margin-bottom:4px; }
     .akiya-pin-sample {
       width:18px; height:18px; border-radius:50%;
@@ -291,6 +292,7 @@
 
     /* ピンDOM要素 */
     .akiya-marker {
+      position:relative;
       width:26px; height:26px; border-radius:50%;
       display:flex; align-items:center; justify-content:center;
       color:#fff; font-size:11px; font-weight:700;
@@ -301,8 +303,20 @@
     .akiya-marker.kubun-building { background:#1a6b3c; }
     .akiya-marker.kubun-land     { background:#C2841C; }
 
+    /* 同一地点に複数物件がある場合の件数バッジ */
+    .akiya-marker-count {
+      position:absolute; top:-6px; right:-6px;
+      min-width:16px; height:16px; padding:0 3px;
+      background:#c0392b; color:#fff; font-size:9px; font-weight:700;
+      border-radius:8px; display:flex; align-items:center; justify-content:center;
+      border:1.5px solid #fff; box-shadow:0 1px 2px rgba(0,0,0,0.3);
+    }
+
     /* ピンのポップアップ */
     .akiya-popup .popup-inner { padding:12px 14px; }
+    .akiya-popup .popup-group-title { font-size:11px; font-weight:700; color:#1B6E6C; margin-bottom:8px; }
+    .akiya-popup .popup-item + .popup-divider { margin:10px 0; }
+    .akiya-popup .popup-divider { border:none; border-top:1px dashed #ddd; margin:10px 0; }
     .akiya-popup .popup-title { font-size:13px; font-weight:700; color:#333; margin-bottom:6px; }
     .akiya-popup .popup-row { display:flex; justify-content:space-between; font-size:12px; color:#555; margin-bottom:3px; }
     .akiya-popup .popup-row span:last-child { font-weight:600; color:#333; }
@@ -319,7 +333,7 @@
       text-decoration:none;
     }
     .akiya-popup .popup-link:hover { background:#1B6E6C; color:#fff; }
-    .akiya-popup .popup-note { font-size:9px; color:#aaa; margin-top:6px; }
+    .akiya-popup .popup-note { font-size:11px; color:#c0392b; font-weight:600; margin-top:8px; line-height:1.5; }
 
     @media (max-width:600px) {
       #akiya-legend { bottom:16px; left:12px; }
@@ -984,6 +998,8 @@ function loadAkiyaLayer() {
   if (akiyaLayerReady) {
     // 2回目以降：既存レイヤー/マーカーを再表示するだけ
     map.setLayoutProperty('akiya-rate-fill', 'visibility', 'visible');
+    map.setLayoutProperty('akiya-pin-radius-fill', 'visibility', 'visible');
+    map.setLayoutProperty('akiya-pin-radius-outline', 'visibility', 'visible');
     map.setPaintProperty('town-outline', 'line-color', '#fff');
     map.setPaintProperty('town-outline', 'line-opacity', 0.8);
     akiyaMarkers.forEach(m => m.addTo(map));
@@ -1049,17 +1065,41 @@ function loadAkiyaLayer() {
     .catch(err => console.error('Akiya rate GeoJSON error:', err));
 
   // --- ② ピン（バンク登録物件） ---
+  // 座標は「町丁目名」のジオコーディング結果であり、特定の建物位置ではない。
+  // 同一町丁目の物件は完全に同一座標を持つため、まず座標単位でグループ化し、
+  // 1地点＝1ピン（複数件は件数バッジ）として描画する。
+  // あわせて、各ピンの下に「この付近（町丁目内のどこか）」であることを
+  // 示す半透明の円（半径40m）を敷き、特定家屋への誤認を防ぐ。
+  const AKIYA_PIN_RADIUS_KM = 0.04; // 40m。特定建物ではないことを示す程度の大きさに調整可能
+
   fetch(AKIYA_URL)
     .then(r => { if (!r.ok) throw new Error('fetch failed: akiya'); return r.json(); })
     .then(geojson => {
+      const groups = new Map(); // key: "lng,lat" -> { lng, lat, items:[properties,...] }
       geojson.features.forEach(f => {
-        const p = f.properties;
         const [lng, lat] = f.geometry.coordinates;
+        const key = lng.toFixed(6) + ',' + lat.toFixed(6);
+        if (!groups.has(key)) groups.set(key, { lng, lat, items: [] });
+        groups.get(key).items.push(f.properties);
+      });
+
+      const radiusFeatures = [];
+
+      groups.forEach(group => {
+        const { lng, lat, items } = group;
+        const primary = items[0]; // マーカーの色・記号は代表として先頭物件を使用
 
         const el = document.createElement('div');
-        el.className = 'akiya-marker kubun-' + p.kubun;
-        el.textContent = AKIYA_TORIHIKI_LABEL[p.torihiki] || '?';
-        el.title = p.name;
+        el.className = 'akiya-marker kubun-' + primary.kubun;
+        el.textContent = AKIYA_TORIHIKI_LABEL[primary.torihiki] || '?';
+        el.title = items.map(p => p.name).join(' / ');
+
+        if (items.length > 1) {
+          const badge = document.createElement('div');
+          badge.className = 'akiya-marker-count';
+          badge.textContent = items.length;
+          el.appendChild(badge);
+        }
 
         const marker = new maplibregl.Marker({ element: el })
           .setLngLat([lng, lat]);
@@ -1068,17 +1108,15 @@ function loadAkiyaLayer() {
           ev.stopPropagation();
           if (akiyaCurrentPopup) akiyaCurrentPopup.remove();
 
-          const priceRow = (p.price_man && p.price_man > 0)
-            ? '<div class="popup-row"><span>希望価格</span><span>' + p.price_man.toLocaleString() + '万円</span></div>'
-            : '';
-          const rentRow = (p.rent_yen && p.rent_yen > 0)
-            ? '<div class="popup-row"><span>希望賃料</span><span>' + p.rent_yen.toLocaleString() + '円/月</span></div>'
-            : '';
-
-          akiyaCurrentPopup = new maplibregl.Popup({ closeButton: true, maxWidth: '240px', className: 'akiya-popup' })
-            .setLngLat([lng, lat])
-            .setHTML(
-              '<div class="popup-inner">' +
+          const cardsHtml = items.map(p => {
+            const priceRow = (p.price_man && p.price_man > 0)
+              ? '<div class="popup-row"><span>希望価格</span><span>' + p.price_man.toLocaleString() + '万円</span></div>'
+              : '';
+            const rentRow = (p.rent_yen && p.rent_yen > 0)
+              ? '<div class="popup-row"><span>希望賃料</span><span>' + p.rent_yen.toLocaleString() + '円/月</span></div>'
+              : '';
+            return (
+              '<div class="popup-item">' +
               '<div class="popup-title">' + p.name + '</div>' +
               '<div style="margin-bottom:6px;">' +
               '<span class="popup-badge badge-' + p.kubun + '">' + AKIYA_KUBUN_TEXT[p.kubun] + '</span>' +
@@ -1087,6 +1125,16 @@ function loadAkiyaLayer() {
               '<div class="popup-row"><span>所在地</span><span>' + p.addr + '</span></div>' +
               priceRow + rentRow +
               '<a class="popup-link" href="' + p.url + '" target="_blank" rel="noopener">市公式ページで見る（別タブ）</a>' +
+              '</div>'
+            );
+          }).join('<hr class="popup-divider">');
+
+          akiyaCurrentPopup = new maplibregl.Popup({ closeButton: true, maxWidth: '260px', className: 'akiya-popup' })
+            .setLngLat([lng, lat])
+            .setHTML(
+              '<div class="popup-inner">' +
+              (items.length > 1 ? '<div class="popup-group-title">この地点に' + items.length + '件</div>' : '') +
+              cardsHtml +
               '<div class="popup-note">所在地は町丁目までの情報です（長崎市空き家空き地バンク公開情報）</div>' +
               '</div>'
             )
@@ -1095,7 +1143,33 @@ function loadAkiyaLayer() {
 
         marker.addTo(map);
         akiyaMarkers.push(marker);
+
+        if (window.turf) {
+          radiusFeatures.push(turf.circle([lng, lat], AKIYA_PIN_RADIUS_KM, { steps: 32, units: 'kilometers' }));
+        }
       });
+
+      // 不確実性円レイヤー（ピンの下に敷く半透明の円）
+      if (radiusFeatures.length) {
+        map.addSource('akiya-pin-radius', {
+          type: 'geojson',
+          data: { type: 'FeatureCollection', features: radiusFeatures }
+        });
+        map.addLayer({
+          id: 'akiya-pin-radius-fill',
+          type: 'fill',
+          source: 'akiya-pin-radius',
+          layout: { visibility: 'visible' },
+          paint: { 'fill-color': '#666666', 'fill-opacity': 0.18 }
+        }, 'town-highlight-fill');
+        map.addLayer({
+          id: 'akiya-pin-radius-outline',
+          type: 'line',
+          source: 'akiya-pin-radius',
+          layout: { visibility: 'visible' },
+          paint: { 'line-color': '#888888', 'line-width': 1, 'line-dasharray': [2, 2] }
+        }, 'town-highlight-fill');
+      }
 
       document.getElementById('akiya-pin-legend').classList.add('visible');
       akiyaLayerReady = true;
@@ -1133,6 +1207,8 @@ function onAkiyaToggle(checked) {
 
     if (akiyaLayerReady) {
       map.setLayoutProperty('akiya-rate-fill', 'visibility', 'none');
+      map.setLayoutProperty('akiya-pin-radius-fill', 'visibility', 'none');
+      map.setLayoutProperty('akiya-pin-radius-outline', 'visibility', 'none');
       akiyaMarkers.forEach(m => m.remove());
 
       const popOn  = document.getElementById('pop-checkbox').checked;
