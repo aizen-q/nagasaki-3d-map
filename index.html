@@ -562,6 +562,26 @@
       <div id="tram-chome-list" style="display:none; margin-top:8px; max-height:220px; overflow-y:auto; font-size:11px; padding-top:6px; border-top:1px solid #f0f0f0;"></div>
     </div>
 
+    <!-- Price / walk-distance filter section -->
+    <div id="akiya-filter-section" style="border-top:1px solid #f0f0f0; padding-top:10px;">
+      <div class="toggle-label" style="margin-bottom:8px;">価格・徒歩圏で絞り込む</div>
+      <div style="display:flex; align-items:center; gap:6px; margin-bottom:6px;">
+        <span style="font-size:11px; color:#555; width:76px; flex-shrink:0;">売買 上限</span>
+        <input type="number" id="filter-sale-max" placeholder="未指定" min="0" style="flex:1; padding:5px; border:1px solid #ccc; border-radius:4px; font-size:12px; width:0;">
+        <span style="font-size:11px; color:#555;">万円</span>
+      </div>
+      <div style="display:flex; align-items:center; gap:6px; margin-bottom:8px;">
+        <span style="font-size:11px; color:#555; width:76px; flex-shrink:0;">賃貸 上限</span>
+        <input type="number" id="filter-rent-max" placeholder="未指定" min="0" style="flex:1; padding:5px; border:1px solid #ccc; border-radius:4px; font-size:12px; width:0;">
+        <span style="font-size:11px; color:#555;">円/月</span>
+      </div>
+      <div style="font-size:10px; color:#888; margin-bottom:8px;">※電停・徒歩圏を選んでいる場合は、その範囲内の物件だけに絞り込みます（未選択なら価格だけで判定）</div>
+      <div style="display:flex; gap:8px;">
+        <button onclick="applyAkiyaFilter()" style="flex:1; background:#1B6E6C; color:#fff; border:none; border-radius:6px; padding:8px; font-size:12px; font-weight:600; cursor:pointer;">絞り込む</button>
+        <button onclick="resetAkiyaFilter()" style="background:#eee; color:#555; border:none; border-radius:6px; padding:8px 12px; font-size:12px; cursor:pointer;">リセット</button>
+      </div>
+      <div id="akiya-filter-status" style="font-size:11px; color:#555; margin-top:6px;"></div>
+    </div>
 
   </div>
 </div>
@@ -1027,6 +1047,7 @@ let akiyaLayerReady = false;
 let pendingAkiyaVisibility = false;
 let akiyaCurrentPopup = null;
 let akiyaIconsRegistered = false; // map.addImageで登録済みのアイコンID集合の初期化フラグ
+let akiyaPinFeatures = []; // 価格・徒歩圏フィルタ用に、生成したピンfeatureを保持
 
 const AKIYA_RATE_COLOR = [
   'step', ['get', 'akiya_rate_pct'],
@@ -1235,7 +1256,8 @@ function loadAkiyaLayer() {
             torihiki: primary.torihiki,
             count: count,
             badge_icon: count > 1 ? ('akiya-badge-' + count) : '',
-            items_json: JSON.stringify(items)
+            items_json: JSON.stringify(items),
+            matched: true // 価格・徒歩圏の絞り込み結果（絞り込み未実行時は常にtrue）
           }
         });
 
@@ -1253,6 +1275,7 @@ function loadAkiyaLayer() {
       });
 
       // ピン本体（色付き丸＋取引区分の文字）
+      akiyaPinFeatures = pinFeatures; // 価格・徒歩圏フィルタから参照するため保持
       map.addSource('akiya-pins', {
         type: 'geojson',
         data: { type: 'FeatureCollection', features: pinFeatures }
@@ -1267,6 +1290,9 @@ function loadAkiyaLayer() {
           'icon-size': 1,
           'icon-allow-overlap': true,
           'icon-ignore-placement': true
+        },
+        paint: {
+          'icon-opacity': ['case', ['==', ['get', 'matched'], false], 0.15, 1]
         }
       });
       // 件数バッジ（複数物件が同一地点にある場合のみ、右上に少しずらして重ねる）
@@ -1282,6 +1308,9 @@ function loadAkiyaLayer() {
           'icon-offset': [16, -16],
           'icon-allow-overlap': true,
           'icon-ignore-placement': true
+        },
+        paint: {
+          'icon-opacity': ['case', ['==', ['get', 'matched'], false], 0.15, 1]
         }
       });
 
@@ -1360,6 +1389,94 @@ function loadAkiyaLayer() {
       akiyaLayerReady = true;
     })
     .catch(err => console.error('Akiya pins GeoJSON error:', err));
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// 空き家バンクピンの「価格・徒歩圏」絞り込み
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+// 1件の物件（akiya-1.geojsonの1レコード）が、指定した価格条件を満たすか。
+// 未入力の条件は「その条件については絞り込まない」扱い。
+// 売買・賃貸どちらの項目に該当するかは物件のtorihikiで判定する。
+function tramItemPriceMatches(item, saleMax, rentMax) {
+  let saleOk = true, rentOk = true;
+  const isSaleType = item.torihiki === 'sale' || item.torihiki === 'both';
+  const isRentType = item.torihiki === 'rent' || item.torihiki === 'both';
+  if (isSaleType && saleMax !== null) {
+    saleOk = (item.price_man != null && item.price_man > 0 && item.price_man <= saleMax);
+  }
+  if (isRentType && rentMax !== null) {
+    rentOk = (item.rent_yen != null && item.rent_yen > 0 && item.rent_yen <= rentMax);
+  }
+  return saleOk && rentOk;
+}
+
+// 現在選択中の電停・トグル状態から、「徒歩圏」の判定に使うリング（多角形の頂点配列）を返す。
+// 電停未選択、またはどちらのトグルもOFFの場合はnull（＝徒歩圏では絞り込まない）。
+function getActiveTramWalkRing() {
+  if (tramSelectedIdx === null) return null;
+  const stop = tramStops[tramSelectedIdx];
+  const elevChk = document.getElementById('tram-elev-checkbox');
+  const circleChk = document.getElementById('tram-circle-checkbox');
+
+  if (elevChk.checked && tramElevCache[tramSelectedIdx]) {
+    return tramElevCache[tramSelectedIdx].map(p => [p.lon, p.lat]);
+  }
+  if (circleChk.checked) {
+    const ring = [];
+    for (let d = 0; d < 36; d++) {
+      const pt = tramOffsetLatLon(stop.lat, stop.lon, 800, d * 10);
+      ring.push([pt.lon, pt.lat]);
+    }
+    return ring;
+  }
+  return null;
+}
+
+function applyAkiyaFilter() {
+  const akiyaChk = document.getElementById('akiya-checkbox');
+  const statusEl = document.getElementById('akiya-filter-status');
+
+  if (!akiyaChk.checked || !akiyaLayerReady) {
+    statusEl.textContent = '先に「空き家バンクを表示」をONにしてください。';
+    statusEl.style.color = '#C62828';
+    return;
+  }
+
+  const saleRaw = document.getElementById('filter-sale-max').value;
+  const rentRaw = document.getElementById('filter-rent-max').value;
+  const saleMax = saleRaw !== '' ? Number(saleRaw) : null;
+  const rentMax = rentRaw !== '' ? Number(rentRaw) : null;
+  const ring = getActiveTramWalkRing();
+
+  let matchedCount = 0;
+  akiyaPinFeatures.forEach(f => {
+    const [lng, lat] = f.geometry.coordinates;
+    const geoMatch = !ring || tramPointInPolygon(lng, lat, ring);
+    let priceMatch = true;
+    if (geoMatch && (saleMax !== null || rentMax !== null)) {
+      const items = JSON.parse(f.properties.items_json);
+      priceMatch = items.some(item => tramItemPriceMatches(item, saleMax, rentMax));
+    }
+    const matched = geoMatch && priceMatch;
+    f.properties.matched = matched;
+    if (matched) matchedCount++;
+  });
+
+  map.getSource('akiya-pins').setData({ type: 'FeatureCollection', features: akiyaPinFeatures });
+
+  statusEl.style.color = '#555';
+  statusEl.textContent = matchedCount + '件が該当しました（' + akiyaPinFeatures.length + '地点中）。該当しないピンは薄く表示されます。';
+}
+
+function resetAkiyaFilter() {
+  document.getElementById('filter-sale-max').value = '';
+  document.getElementById('filter-rent-max').value = '';
+  akiyaPinFeatures.forEach(f => { f.properties.matched = true; });
+  if (map.getSource('akiya-pins')) {
+    map.getSource('akiya-pins').setData({ type: 'FeatureCollection', features: akiyaPinFeatures });
+  }
+  document.getElementById('akiya-filter-status').textContent = '';
 }
 
 function onAkiyaToggle(checked) {
