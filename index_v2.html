@@ -1119,7 +1119,9 @@ function loadAkiyaLayer() {
           AKIYA_KUBUN_COLOR[kubun] || '#666',
           AKIYA_TORIHIKI_LABEL[torihiki] || '?'
         );
-        map.addImage(id, canvas, { pixelRatio: ratio });
+        const ctx = canvas.getContext('2d');
+        const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        map.addImage(id, imgData, { pixelRatio: ratio });
       });
     });
 
@@ -1150,7 +1152,8 @@ function loadAkiyaLayer() {
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText(String(count), r, r + 1);
-    map.addImage(id, canvas, { pixelRatio: dpr });
+    const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    map.addImage(id, imgData, { pixelRatio: dpr });
     return id;
   }
 
