@@ -103,11 +103,26 @@
     .toggle-thumb { position:absolute; top:3px; left:3px; width:18px; height:18px; background:white; border-radius:50%; box-shadow:0 1px 3px rgba(0,0,0,0.3); transition:transform 0.2s; pointer-events:none; }
     #pop-checkbox:checked + .toggle-track,
     #yoto-checkbox:checked + .toggle-track,
-    #akiya-checkbox:checked + .toggle-track { background:#1B6E6C; }
+    #akiya-checkbox:checked + .toggle-track,
+    #tram-circle-checkbox:checked + .toggle-track,
+    #tram-elev-checkbox:checked + .toggle-track { background:#1B6E6C; }
     #pop-checkbox:checked ~ .toggle-thumb,
     #yoto-checkbox:checked ~ .toggle-thumb,
-    #akiya-checkbox:checked ~ .toggle-thumb { transform:translateX(20px); }
+    #akiya-checkbox:checked ~ .toggle-thumb,
+    #tram-circle-checkbox:checked ~ .toggle-thumb,
+    #tram-elev-checkbox:checked ~ .toggle-thumb { transform:translateX(20px); }
     #pop-note { font-size:10px; color:#999; margin-top:4px; }
+
+    /* Tram walk-distance section */
+    #tram-walk-section { border-top:1px solid #f0f0f0; padding-top:10px; }
+    #tram-walk-select {
+      width:100%; padding:6px; border:1px solid #ccc; border-radius:6px;
+      font-size:12px; margin-bottom:8px; color:#333; background:#fff;
+    }
+    #tram-walk-section .toggle-row { margin-bottom:6px; }
+    #tram-walk-section .toggle-row:last-of-type { margin-bottom:0; }
+    #tram-elev-status { font-size:10px; color:#666; margin-top:4px; min-height:12px; }
+    #tram-elev-status.error { color:#C62828; }
 
     /* Legend */
     #pop-legend {
@@ -515,6 +530,36 @@
       </div>
       <div class="toggle-note">面塗り：空き家発生率10%以上の町（空家等対策計画 R8.3）</div>
       <div class="toggle-note">ピン：空き家バンク登録物件（市公開情報）</div>
+    </div>
+
+    <!-- Tram walk-distance section -->
+    <div id="tram-walk-section">
+      <div class="toggle-label" style="margin-bottom:8px;">路面電車の徒歩圏</div>
+      <select id="tram-walk-select" onchange="onTramStopChange()">
+        <option value="">電停を選択...</option>
+      </select>
+      <div class="toggle-row">
+        <span class="toggle-label">半径800mを表示</span>
+        <label class="toggle-switch">
+          <input type="checkbox" id="tram-circle-checkbox" disabled onchange="onTramCircleToggle(this.checked)">
+          <span class="toggle-track"></span>
+          <span class="toggle-thumb"></span>
+        </label>
+      </div>
+      <div class="toggle-row">
+        <span class="toggle-label">標高差30m以内の徒歩圏を表示</span>
+        <label class="toggle-switch">
+          <input type="checkbox" id="tram-elev-checkbox" disabled onchange="onTramElevToggle(this.checked)">
+          <span class="toggle-track"></span>
+          <span class="toggle-thumb"></span>
+        </label>
+      </div>
+      <div id="tram-elev-status"></div>
+      <div id="tram-legend" style="display:none; font-size:10px; color:#555; margin-top:6px; line-height:1.6;">
+        <div><span style="display:inline-block;width:10px;height:10px;border:2px dashed #ff6d00;border-radius:50%;margin-right:4px;vertical-align:middle;"></span>破線の円：電停から半径800m</div>
+        <div><span style="display:inline-block;width:10px;height:10px;background:#1565C0;opacity:0.7;border-radius:2px;margin-right:4px;vertical-align:middle;"></span>青塗り：標高差30m以内の徒歩圏</div>
+      </div>
+      <div id="tram-chome-list" style="display:none; margin-top:8px; max-height:220px; overflow-y:auto; font-size:11px; padding-top:6px; border-top:1px solid #f0f0f0;"></div>
     </div>
 
 
@@ -1373,6 +1418,524 @@ function closeAkiyaPinLegend() {
   document.getElementById('akiya-pin-legend').classList.remove('visible');
 }
 
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// 路面電車の徒歩圏（800m円 / 標高差30m以内フィルター）
+// 不動産情報ページ（custom-map.js）と同じアルゴリズム・データを使用。
+// 標高の取得は国土地理院APIをそのまま流用（3Dマップの地形データは
+// queryTerrainElevation()にズーム/ピッチ依存の既知の不具合があり、
+// 不動産情報ページとの結果不一致が起きうるため採用しない）。
+// 描画のみ3DマップのGLレイヤー方式で行う。
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+var tramStops = [
+    { name: "赤迫",               lat: 32.7939517, lon: 129.8574795 },
+    { name: "住吉",               lat: 32.7921428, lon: 129.8597737 },
+    { name: "昭和町通",           lat: 32.789552,  lon: 129.861038  },
+    { name: "千歳町",             lat: 32.790779,  lon: 129.860598  },
+    { name: "若葉町",             lat: 32.787838,  lon: 129.861639  },
+    { name: "長崎大学",           lat: 32.7847142, lon: 129.8624415 },
+    { name: "岩屋橋",             lat: 32.7822919, lon: 129.8623393 },
+    { name: "浦上車庫",           lat: 32.7794611, lon: 129.8613503 },
+    { name: "大橋",               lat: 32.7779379, lon: 129.8613893 },
+    { name: "平和公園",           lat: 32.7738396, lon: 129.8620585 },
+    { name: "原爆資料館",         lat: 32.7707332, lon: 129.8635463 },
+    { name: "大学病院",           lat: 32.7689063, lon: 129.8641470 },
+    { name: "浦上駅前",           lat: 32.7654786, lon: 129.8641821 },
+    { name: "茂里町",             lat: 32.7641532, lon: 129.8645262 },
+    { name: "スタジアムシティノース", lat: 32.7611237, lon: 129.8658297 },
+    { name: "スタジアムシティサウス", lat: 32.7579331, lon: 129.8688160 },
+    { name: "八千代町",           lat: 32.755344,  lon: 129.870275  },
+    { name: "長崎駅前",           lat: 32.7526286, lon: 129.8717885 },
+    { name: "五島町",             lat: 32.7492475, lon: 129.8722440 },
+    { name: "大波止",             lat: 32.746122,  lon: 129.872185  },
+    { name: "出島",               lat: 32.7439617, lon: 129.8717331 },
+    { name: "新地中華街",         lat: 32.7430148, lon: 129.8750893 },
+    { name: "西浜町",             lat: 32.7438616, lon: 129.8762251 },
+    { name: "浜町アーケード",     lat: 32.7446486, lon: 129.8767430 },
+    { name: "観光通",             lat: 32.7433151, lon: 129.8780358 },
+    { name: "思案橋",             lat: 32.7426336, lon: 129.8806058 },
+    { name: "崇福寺",             lat: 32.7412516, lon: 129.8825023 },
+    { name: "市役所",             lat: 32.749380,  lon: 129.880618  },
+    { name: "桜町",               lat: 32.7506866, lon: 129.8765441 },
+    { name: "めがね橋",           lat: 32.7470551, lon: 129.8785295 },
+    { name: "諏訪神社",           lat: 32.7524924, lon: 129.8845739 },
+    { name: "新大工町",           lat: 32.7522818, lon: 129.8867424 },
+    { name: "新中川町",           lat: 32.7522298, lon: 129.8908858 },
+    { name: "蛍茶屋",             lat: 32.7514014, lon: 129.8936462 },
+    { name: "メディカルセンター", lat: 32.7405472, lon: 129.8724735 },
+    { name: "大浦海岸通り",       lat: 32.737793,  lon: 129.870586  },
+    { name: "大浦天主堂",         lat: 32.7362268, lon: 129.8708923 },
+    { name: "石橋",               lat: 32.7344798, lon: 129.8722535 }
+];
+
+function populateTramStopSelect() {
+  const sel = document.getElementById('tram-walk-select');
+  tramStops.forEach((s, i) => {
+    const opt = document.createElement('option');
+    opt.value = i;
+    opt.textContent = s.name;
+    sel.appendChild(opt);
+  });
+}
+populateTramStopSelect();
+
+var TRAM_ELEV_DIRECTIONS = 12;
+var TRAM_ELEV_MAX_RADIUS = 800;
+var TRAM_ELEV_THRESHOLD  = 30;
+var TRAM_ELEV_API_DELAY  = 50;
+
+var tramSelectedIdx   = null;
+var tramCircleReady   = false; // 現在選択中の電停で円レイヤーが準備済みか
+var tramElevCache     = {};    // idx -> [[lng,lat], ...] 12方向の到達点キャッシュ
+var tramElevLoading   = false;
+
+function tramOffsetLatLon(lat, lon, dist, bear) {
+  const R = 6378137;
+  const bearRad = bear * Math.PI / 180;
+  const dLat = (dist * Math.cos(bearRad)) / R;
+  const dLon = (dist * Math.sin(bearRad)) / (R * Math.cos(lat * Math.PI / 180));
+  return { lat: lat + dLat * 180 / Math.PI, lon: lon + dLon * 180 / Math.PI };
+}
+
+function tramGetElevation(lat, lon) {
+  const url = 'https://cyberjapandata2.gsi.go.jp/general/dem/scripts/getelevation.php'
+    + '?lon=' + lon.toFixed(6) + '&lat=' + lat.toFixed(6) + '&outtype=JSON';
+  return fetch(url)
+    .then(r => r.json())
+    .then(d => { const e = parseFloat(d.elevation); return isNaN(e) ? null : e; })
+    .catch(() => null);
+}
+
+function tramDelay(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+function tramBinarySearchBoundary(baseLat, baseLon, baseElev, bearing, threshold, maxDist) {
+  let lo = 0, hi = maxDist, steps = 5, result = hi;
+  function step() {
+    if (steps <= 0 || hi - lo < 20) return Promise.resolve(result);
+    steps--;
+    const mid = (lo + hi) / 2;
+    const pt = tramOffsetLatLon(baseLat, baseLon, mid, bearing);
+    return tramDelay(TRAM_ELEV_API_DELAY)
+      .then(() => tramGetElevation(pt.lat, pt.lon))
+      .then(e => {
+        if (e === null || e <= 0) { hi = mid; result = lo; }
+        else {
+          const diff = Math.abs(e - baseElev);
+          if (diff <= threshold) { lo = mid; result = mid; }
+          else { hi = mid; result = lo; }
+        }
+        return step();
+      });
+  }
+  return step();
+}
+
+function tramHaversineDist(lat1, lon1, lat2, lon2) {
+  const R = 6378137;
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLon = (lon2 - lon1) * Math.PI / 180;
+  const a = Math.sin(dLat/2)*Math.sin(dLat/2) +
+            Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLon/2)*Math.sin(dLon/2);
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+}
+
+function tramInterpolateNulls(polyRaw, baseLat, baseLon) {
+  const n = polyRaw.length;
+  const polyPoints = new Array(n);
+  const hasValid = polyRaw.some(p => p !== null);
+  if (!hasValid) {
+    for (let i = 0; i < n; i++) {
+      polyPoints[i] = tramOffsetLatLon(baseLat, baseLon, TRAM_ELEV_MAX_RADIUS, i * (360 / n));
+    }
+    return polyPoints;
+  }
+  for (let i = 0; i < n; i++) {
+    if (polyRaw[i] !== null) { polyPoints[i] = polyRaw[i]; continue; }
+    let prevIdx = i, nextIdx = i;
+    for (let k = 1; k < n; k++) { const pi = (i - k + n) % n; if (polyRaw[pi] !== null) { prevIdx = pi; break; } }
+    for (let k = 1; k < n; k++) { const ni = (i + k) % n; if (polyRaw[ni] !== null) { nextIdx = ni; break; } }
+    const bear = i * (360 / n);
+    const prevDist = tramHaversineDist(baseLat, baseLon, polyRaw[prevIdx].lat, polyRaw[prevIdx].lon);
+    const nextDist = tramHaversineDist(baseLat, baseLon, polyRaw[nextIdx].lat, polyRaw[nextIdx].lon);
+    const prevSteps = (i - prevIdx + n) % n;
+    const nextSteps = (nextIdx - i + n) % n;
+    const totalSteps = prevSteps + nextSteps;
+    let interpDist = (prevSteps === 0 || totalSteps === 0) ? nextDist : prevDist + (nextDist - prevDist) * (prevSteps / totalSteps);
+    if (interpDist < 150) interpDist = Math.max(prevDist, nextDist);
+    polyPoints[i] = tramOffsetLatLon(baseLat, baseLon, interpDist, bear);
+  }
+  return polyPoints;
+}
+
+function tramCalcElevPolygon(lat, lon, onProgress) {
+  const total = TRAM_ELEV_DIRECTIONS + 1;
+  let completed = 0;
+  const MIN_VALID_DIST = 150;
+
+  return tramGetElevation(lat, lon).then(baseElev => {
+    if (baseElev === null) return Promise.reject(new Error('elevation_base_failed'));
+    completed++; if (onProgress) onProgress(completed, total);
+
+    const promises = [];
+    for (let i = 0; i < TRAM_ELEV_DIRECTIONS; i++) {
+      const bear = i * (360 / TRAM_ELEV_DIRECTIONS);
+      const startDelay = i * TRAM_ELEV_API_DELAY;
+      promises.push(
+        tramDelay(startDelay)
+          .then(() => tramBinarySearchBoundary(lat, lon, baseElev, bear, TRAM_ELEV_THRESHOLD, TRAM_ELEV_MAX_RADIUS))
+          .then(dist => {
+            completed++; if (onProgress) onProgress(completed, total);
+            return dist < MIN_VALID_DIST ? null : tramOffsetLatLon(lat, lon, dist, bear);
+          })
+      );
+    }
+    return Promise.all(promises).then(polyRaw => tramInterpolateNulls(polyRaw, lat, lon));
+  });
+}
+
+// ---- レイヤー準備 ----
+var tramStopIconRegistered = false;
+function registerTramStopIcon() {
+  if (tramStopIconRegistered || map.hasImage('tram-stop-icon')) { tramStopIconRegistered = true; return; }
+  const dpr = window.devicePixelRatio || 1;
+  const size = 30;
+  const canvas = document.createElement('canvas');
+  canvas.width = size * dpr; canvas.height = size * dpr;
+  const ctx = canvas.getContext('2d');
+  ctx.scale(dpr, dpr);
+  const r = size / 2;
+  ctx.beginPath();
+  ctx.arc(r, r, r - 2, 0, Math.PI * 2);
+  ctx.fillStyle = '#ffffff';
+  ctx.fill();
+  ctx.lineWidth = 2.5;
+  ctx.strokeStyle = '#e60012';
+  ctx.stroke();
+  ctx.font = Math.round(size * 0.56) + 'px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('\u{1F68B}', r, r + 1); // 🚋 路面電車の絵文字
+  const raw = ctx.getImageData(0, 0, canvas.width, canvas.height);
+  map.addImage('tram-stop-icon', { width: canvas.width, height: canvas.height, data: new Uint8Array(raw.data.buffer) }, { pixelRatio: dpr });
+  tramStopIconRegistered = true;
+}
+
+function ensureTramWalkLayers() {
+  if (map.getSource('tram-walk-circle')) return;
+
+  registerTramStopIcon();
+
+  // 選択中の電停ピン（路面電車アイコン）
+  map.addSource('tram-stop-marker', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+  map.addLayer({
+    id: 'tram-stop-marker-icon', type: 'symbol', source: 'tram-stop-marker',
+    layout: {
+      visibility: 'none',
+      'icon-image': 'tram-stop-icon', 'icon-size': 1,
+      'icon-allow-overlap': true, 'icon-ignore-placement': true
+    }
+  });
+
+  // 半径800m（判定の目安となる境界円。他のどの塗りより必ず手前に出す）
+  map.addSource('tram-walk-circle', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+  map.addLayer({
+    id: 'tram-walk-circle-outline', type: 'line', source: 'tram-walk-circle',
+    layout: { visibility: 'none' },
+    paint: { 'line-color': '#ff6d00', 'line-width': 3, 'line-dasharray': [3, 2] }
+  });
+
+  // 標高差30m以内の徒歩圏（山の緑と被らない、はっきりした青塗り）
+  map.addSource('tram-walk-elev', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+  map.addLayer({
+    id: 'tram-walk-elev-fill', type: 'fill', source: 'tram-walk-elev',
+    layout: { visibility: 'none' },
+    paint: { 'fill-color': '#1565C0', 'fill-opacity': 0.42 }
+  }, 'town-highlight-fill');
+  map.addLayer({
+    id: 'tram-walk-elev-outline', type: 'line', source: 'tram-walk-elev',
+    layout: { visibility: 'none' },
+    paint: { 'line-color': '#0d47a1', 'line-width': 2.5 }
+  }, 'town-highlight-fill');
+}
+
+function tramSetStatus(text, isError) {
+  const el = document.getElementById('tram-elev-status');
+  el.textContent = text || '';
+  el.classList.toggle('error', !!isError);
+}
+
+function onTramStopChange() {
+  const idx = document.getElementById('tram-walk-select').value;
+  const circleChk = document.getElementById('tram-circle-checkbox');
+  const elevChk = document.getElementById('tram-elev-checkbox');
+  const legend = document.getElementById('tram-legend');
+  const listArea = document.getElementById('tram-chome-list');
+
+  if (idx === '') {
+    tramSelectedIdx = null;
+    circleChk.disabled = true; elevChk.disabled = true;
+    circleChk.checked = false; elevChk.checked = false;
+    hideTramWalkLayers();
+    tramSetStatus('');
+    legend.style.display = 'none';
+    listArea.style.display = 'none';
+    return;
+  }
+
+  tramSelectedIdx = parseInt(idx, 10);
+  circleChk.disabled = false; elevChk.disabled = false;
+  tramSetStatus('');
+  legend.style.display = 'block';
+
+  ensureTramWalkLayers();
+
+  // 電停ピンを表示し、その電停まで地図を移動
+  const stop = tramStops[tramSelectedIdx];
+  const pinFeature = { type: 'Feature', properties: { name: stop.name }, geometry: { type: 'Point', coordinates: [stop.lon, stop.lat] } };
+  map.getSource('tram-stop-marker').setData({ type: 'FeatureCollection', features: [pinFeature] });
+  map.setLayoutProperty('tram-stop-marker-icon', 'visibility', 'visible');
+  map.flyTo({ center: [stop.lon, stop.lat], zoom: 14, duration: 1200 });
+
+  if (circleChk.checked) {
+    drawTramCircle();
+  } else {
+    map.setLayoutProperty('tram-walk-circle-outline', 'visibility', 'none');
+  }
+
+  if (elevChk.checked) {
+    elevChk.checked = false; // 電停が変わったら再計算のためチェックを一度外す
+    onTramElevToggle(true);
+  } else {
+    map.setLayoutProperty('tram-walk-elev-fill', 'visibility', 'none');
+    map.setLayoutProperty('tram-walk-elev-outline', 'visibility', 'none');
+    listArea.style.display = 'none';
+  }
+}
+
+function hideTramWalkLayers() {
+  if (!map.getSource('tram-walk-circle')) return;
+  ['tram-stop-marker-icon',
+   'tram-walk-circle-outline',
+   'tram-walk-elev-fill', 'tram-walk-elev-outline'].forEach(id => {
+    map.setLayoutProperty(id, 'visibility', 'none');
+  });
+}
+
+// 現在表示中の円・徒歩圏ポリゴンが見えるように視点を調整する。
+// map.fitBounds()はピッチ（3D傾き）がついた状態だと期待通りに
+// 機能しないことがあるため、傾きをそのまま保つflyTo（固定ズーム）を使う。
+function fitTramWalkView() {
+  if (tramSelectedIdx === null) return;
+  const stop = tramStops[tramSelectedIdx];
+  map.flyTo({ center: [stop.lon, stop.lat], zoom: 14.3, duration: 800 });
+}
+
+function drawTramCircle() {
+  if (tramSelectedIdx === null || !window.turf) return;
+  const stop = tramStops[tramSelectedIdx];
+  const circle = turf.circle([stop.lon, stop.lat], 0.8, { steps: 64, units: 'kilometers' });
+  map.getSource('tram-walk-circle').setData({ type: 'FeatureCollection', features: [circle] });
+  map.setLayoutProperty('tram-walk-circle-outline', 'visibility', 'visible');
+  fitTramWalkView();
+}
+
+function onTramCircleToggle(checked) {
+  if (tramSelectedIdx === null) return;
+  ensureTramWalkLayers();
+  if (checked) {
+    drawTramCircle();
+  } else {
+    map.setLayoutProperty('tram-walk-circle-outline', 'visibility', 'none');
+  }
+}
+
+function onTramElevToggle(checked) {
+  if (tramSelectedIdx === null) return;
+  ensureTramWalkLayers();
+
+  if (!checked) {
+    map.setLayoutProperty('tram-walk-elev-fill', 'visibility', 'none');
+    map.setLayoutProperty('tram-walk-elev-outline', 'visibility', 'none');
+    document.getElementById('tram-chome-list').style.display = 'none';
+    tramSetStatus('');
+    return;
+  }
+
+  const idx = tramSelectedIdx;
+  const stop = tramStops[idx];
+
+  if (tramElevCache[idx]) {
+    drawTramElevPolygon(tramElevCache[idx]);
+    computeChomeList(tramElevCache[idx], stop);
+    return;
+  }
+
+  if (tramElevLoading) return;
+  tramElevLoading = true;
+  tramSetStatus('標高差を計算中... (0/13)');
+  document.getElementById('tram-chome-list').style.display = 'none';
+
+  tramCalcElevPolygon(stop.lat, stop.lon, (done, total) => {
+    tramSetStatus('標高差を計算中... (' + done + '/' + total + ')');
+  }).then(polyPoints => {
+    tramElevLoading = false;
+    tramElevCache[idx] = polyPoints;
+    // 選択がその間に変わっていないか確認
+    if (tramSelectedIdx === idx && document.getElementById('tram-elev-checkbox').checked) {
+      drawTramElevPolygon(polyPoints);
+      computeChomeList(polyPoints, stop);
+      tramSetStatus('');
+    }
+  }).catch(() => {
+    tramElevLoading = false;
+    tramSetStatus('標高データの取得に失敗しました。時間をおいて再度お試しください。', true);
+    document.getElementById('tram-elev-checkbox').checked = false;
+  });
+}
+
+function drawTramElevPolygon(polyPoints) {
+  const coords = polyPoints.map(p => [p.lon, p.lat]);
+  coords.push(coords[0]);
+  const feature = { type: 'Feature', properties: {}, geometry: { type: 'Polygon', coordinates: [coords] } };
+  map.getSource('tram-walk-elev').setData({ type: 'FeatureCollection', features: [feature] });
+  map.setLayoutProperty('tram-walk-elev-fill', 'visibility', 'visible');
+  map.setLayoutProperty('tram-walk-elev-outline', 'visibility', 'visible');
+  fitTramWalkView();
+}
+
+// ---- 町丁目の点包含テスト（ray casting法。custom-map.jsと同じ考え方） ----
+var TRAM_GRID_STEP = 0.0005; // 約50m間隔
+
+function tramPointInPolygon(px, py, poly) {
+  let inside = false;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const xi = poly[i][0], yi = poly[i][1];
+    const xj = poly[j][0], yj = poly[j][1];
+    if (((yi > py) !== (yj > py)) && (px < (xj - xi) * (py - yi) / (yj - yi) + xi)) inside = !inside;
+  }
+  return inside;
+}
+
+function tramPolygonCentroid(pts) {
+  let lat = 0, lon = 0;
+  for (let i = 0; i < pts.length; i++) { lat += pts[i][1]; lon += pts[i][0]; }
+  return { lat: lat / pts.length, lon: lon / pts.length };
+}
+
+function computeChomeList(polyPoints, stop) {
+  const listArea = document.getElementById('tram-chome-list');
+  if (!townGeoJSON) { listArea.style.display = 'none'; return; }
+
+  listArea.style.display = 'block';
+  listArea.innerHTML = '<span style="color:#999;">町丁目データを判定中...</span>';
+
+  const elevRing = polyPoints.map(p => [p.lon, p.lat]);
+  const circleRing800 = [];
+  for (let d = 0; d < 36; d++) {
+    const pt = tramOffsetLatLon(stop.lat, stop.lon, 800, d * 10);
+    circleRing800.push([pt.lon, pt.lat]);
+  }
+
+  const insideNames = [];
+  const outsideNames = [];
+  const outsideFeatures = [];
+
+  townGeoJSON.features.forEach(feature => {
+    if (!feature.geometry) return;
+    const geomType = feature.geometry.type;
+    const coords = feature.geometry.coordinates;
+    const rings = [];
+    if (geomType === 'Polygon') rings.push(coords[0]);
+    else if (geomType === 'MultiPolygon') coords.forEach(poly => rings.push(poly[0]));
+    if (rings.length === 0) return;
+
+    const props = feature.properties || {};
+    const rawName = props.S_NAME || props.MOJI || props.name || '不明';
+    const displayName = NODOT_MAP[rawName] || rawName;
+
+    let totalChome = 0, totalElev = 0, total800 = 0;
+    rings.forEach(ring => {
+      const r = tramMajorityRatioCounts(ring, elevRing, circleRing800);
+      totalChome += r.inChome; totalElev += r.inElev; total800 += r.in800;
+    });
+
+    let inElev, in800;
+    if (totalChome === 0) {
+      const c = tramPolygonCentroid(rings[0]);
+      inElev = tramPointInPolygon(c.lon, c.lat, elevRing);
+      in800  = tramPointInPolygon(c.lon, c.lat, circleRing800);
+    } else {
+      // 判定閾値：40%（2026-07-01変更）。不動産情報ページは50%だが、
+      // 大学病院電停で坂本二丁目（重なり43.2%）が漏れていたため、
+      // Qtaroさんの判断で40%に緩和。※他の電停・町丁目にも共通で影響する。
+      inElev = (totalElev / totalChome) > 0.4;
+      in800  = (total800  / totalChome) > 0.4;
+    }
+
+    if (inElev) {
+      if (!insideNames.some(o => o.raw === rawName)) insideNames.push({ display: displayName, raw: rawName });
+    } else if (in800) {
+      if (!outsideNames.some(o => o.raw === rawName)) outsideNames.push({ display: displayName, raw: rawName });
+      outsideFeatures.push(feature);
+    }
+  });
+
+  // ※圏外エリアの自動塗り分けは行わない（リスト表示のみ。
+  //   ユーザーが気になる町丁目をクリックした時だけ selectTown() でハイライトする）
+
+  insideNames.sort((a, b) => a.display.localeCompare(b.display, 'ja'));
+  outsideNames.sort((a, b) => a.display.localeCompare(b.display, 'ja'));
+
+  if (insideNames.length === 0 && outsideNames.length === 0) {
+    listArea.innerHTML = '<span style="color:#999;">該当する町丁目が見つかりませんでした。</span>';
+    return;
+  }
+
+  let html = '';
+  if (insideNames.length > 0) {
+    html += '<div style="color:#555;margin-bottom:4px;">徒歩圏内：' + insideNames.length + '件</div>';
+    html += insideNames.map(o =>
+      '<div style="padding:2px 0;"><span style="color:#444;">・ </span>' +
+      '<span class="tram-chome-link" data-name="' + o.raw + '" style="cursor:pointer;color:#1565C0;text-decoration:underline;">' + o.display + '</span></div>'
+    ).join('');
+  }
+  if (outsideNames.length > 0) {
+    html += '<div style="margin-top:8px;padding-top:6px;border-top:1px dashed #ccc;">' +
+      '<div style="font-weight:bold;color:#e91e8c;margin-bottom:3px;">🚫 圏外（800m圏内・標高差30m超）</div>' +
+      outsideNames.map(o =>
+        '<div style="padding:2px 0;"><span style="color:#bbb;">・ </span>' +
+        '<span class="tram-chome-link" data-name="' + o.raw + '" style="cursor:pointer;color:#c2185b;text-decoration:underline;">' + o.display + '</span></div>'
+      ).join('') + '</div>';
+  }
+  listArea.innerHTML = html;
+
+  listArea.querySelectorAll('.tram-chome-link').forEach(el => {
+    el.addEventListener('click', () => highlightChomeGently(el.getAttribute('data-name')));
+  });
+}
+
+function tramMajorityRatioCounts(ring, judgeRingElev, judgeRing800) {
+  let minLon = Infinity, maxLon = -Infinity, minLat = Infinity, maxLat = -Infinity;
+  for (let i = 0; i < ring.length; i++) {
+    const lon = ring[i][0], lat = ring[i][1];
+    if (lon < minLon) minLon = lon; if (lon > maxLon) maxLon = lon;
+    if (lat < minLat) minLat = lat; if (lat > maxLat) maxLat = lat;
+  }
+  let inChome = 0, inElev = 0, in800 = 0;
+  for (let glat = minLat + TRAM_GRID_STEP / 2; glat < maxLat; glat += TRAM_GRID_STEP) {
+    for (let glon = minLon + TRAM_GRID_STEP / 2; glon < maxLon; glon += TRAM_GRID_STEP) {
+      if (tramPointInPolygon(glon, glat, ring)) {
+        inChome++;
+        if (tramPointInPolygon(glon, glat, judgeRingElev)) inElev++;
+        if (tramPointInPolygon(glon, glat, judgeRing800)) in800++;
+      }
+    }
+  }
+  return { inChome, inElev, in800 };
+}
+
 
 const NODOT_MAP = {
   "三原": "三原一丁目",
@@ -1665,6 +2228,38 @@ function getBbox(feat) {
   }
   walk(feat.geometry.coordinates, feat.geometry.type === 'Polygon' ? 2 : 3);
   return [[x0, y0], [x1, y1]];
+}
+
+// 路面電車の徒歩圏リストから町丁目を選んだ時専用のハイライト。
+// selectTown()は検索結果向けに寄りすぎるズームをするため、
+// 徒歩圏の文脈では引いた表示になるよう別関数にしている。
+function highlightChomeGently(name) {
+  selectedTown = name;
+  if (layersReady) {
+    map.setFilter('town-highlight-fill',   ['==', 'S_NAME', name]);
+    map.setFilter('town-highlight-outline',['==', 'S_NAME', name]);
+  }
+
+  const info = document.getElementById('area-info');
+  info.classList.add('active');
+  document.getElementById('area-name').textContent = name;
+  document.getElementById('area-sub').textContent  = '3D地形上でハイライト表示中 — ドラッグで視点変更可';
+
+  const pd = POPULATION_DATA[name];
+  const popEl = document.getElementById('area-pop');
+  if (pd && pd.y2025 != null) {
+    const s = pd.diff >= 0 ? '+' : '';
+    const c = pd.rate >= 0 ? '#B71C1C' : '#1565C0';
+    popEl.innerHTML = '人口: <strong>' + pd.y2025.toLocaleString() + '人</strong> <span style="color:' + c + ';font-weight:700">' + s + pd.diff + '人 (' + s + pd.rate + '%)</span>';
+  } else { popEl.textContent = ''; }
+
+  if (townGeoJSON) {
+    const feat = townGeoJSON.features.find(f => f.properties && f.properties.S_NAME === name);
+    if (feat) {
+      const bb = getBbox(feat);
+      map.fitBounds(bb, { padding: 200, maxZoom: 15, duration: 800 });
+    }
+  }
 }
 
 function onSearchInput(val) {
