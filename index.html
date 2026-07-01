@@ -980,8 +980,8 @@ const AKIYA_RATE_URL = 'https://aizen2024.com/wp-content/uploads/2026/06/akiya_r
 
 let akiyaLayerReady = false;
 let pendingAkiyaVisibility = false;
-let akiyaMarkers = [];          // 生成したピン（マーカー）の配列。トグルOFFで全消去するため保持
 let akiyaCurrentPopup = null;
+let akiyaIconsRegistered = false; // map.addImageで登録済みのアイコンID集合の初期化フラグ
 
 const AKIYA_RATE_COLOR = [
   'step', ['get', 'akiya_rate_pct'],
@@ -996,13 +996,14 @@ const AKIYA_KUBUN_COLOR    = { building: '#1a6b3c', land: '#C2841C' };
 
 function loadAkiyaLayer() {
   if (akiyaLayerReady) {
-    // 2回目以降：既存レイヤー/マーカーを再表示するだけ
+    // 2回目以降：既存レイヤーを再表示するだけ
     map.setLayoutProperty('akiya-rate-fill', 'visibility', 'visible');
     map.setLayoutProperty('akiya-pin-radius-fill', 'visibility', 'visible');
     map.setLayoutProperty('akiya-pin-radius-outline', 'visibility', 'visible');
+    map.setLayoutProperty('akiya-pins-icon', 'visibility', 'visible');
+    map.setLayoutProperty('akiya-pins-badge-icon', 'visibility', 'visible');
     map.setPaintProperty('town-outline', 'line-color', '#fff');
     map.setPaintProperty('town-outline', 'line-opacity', 0.8);
-    akiyaMarkers.forEach(m => m.addTo(map));
     document.getElementById('akiya-legend').classList.add('visible');
     document.getElementById('akiya-pin-legend').classList.add('visible');
     return;
@@ -1041,6 +1042,8 @@ function loadAkiyaLayer() {
         if (popFeatures.length) return;
 
         if (akiyaCurrentPopup) akiyaCurrentPopup.remove();
+        if (currentPopup) { currentPopup.remove(); currentPopup = null; }
+        if (typeof viewspotCurrentPopup !== 'undefined' && viewspotCurrentPopup) { viewspotCurrentPopup.remove(); viewspotCurrentPopup = null; }
 
         const p = e.features[0].properties;
         const PopupClass = window.maplibregl ? window.maplibregl.Popup : null;
@@ -1070,7 +1073,91 @@ function loadAkiyaLayer() {
   // 1地点＝1ピン（複数件は件数バッジ）として描画する。
   // あわせて、各ピンの下に「この付近（町丁目内のどこか）」であることを
   // 示す半透明の円（半径40m）を敷き、特定家屋への誤認を防ぐ。
+  //
+  // 【重要】ピンの描画はDOM Marker（maplibregl.Marker）ではなく、
+  // Canvasで生成したアイコン画像 + GLシンボルレイヤーで行う。
+  // DOM Markerは地形（3D起伏）が有効な状態だと標高の問い合わせが
+  // 不安定になり、傾斜地でピンが大きくズレる不具合がMapLibre本体に
+  // あるため（急傾斜地に多い長崎の空き家データで特に顕著だった）。
+  // シンボルレイヤーは用途地域の面塗りなどと同じ描画パイプラインで
+  // 処理されるため、この種のズレが起きない。
   const AKIYA_PIN_RADIUS_KM = 0.04; // 40m。特定建物ではないことを示す程度の大きさに調整可能
+  const AKIYA_KUBUN_LIST    = ['building', 'land'];
+  const AKIYA_TORIHIKI_LIST = ['sale', 'rent', 'both', 'unknown'];
+
+  // 「区分×取引」の組み合わせごとに、色付きの丸＋文字のアイコン画像をCanvasで生成する
+  function registerAkiyaIcons() {
+    if (akiyaIconsRegistered) return;
+    const dpr = window.devicePixelRatio || 1;
+    const size = 28; // 表示サイズ(px)
+
+    function drawIcon(color, label) {
+      const canvas = document.createElement('canvas');
+      canvas.width = size * dpr;
+      canvas.height = size * dpr;
+      const ctx = canvas.getContext('2d');
+      ctx.scale(dpr, dpr);
+      const r = size / 2;
+      ctx.beginPath();
+      ctx.arc(r, r, r - 1.5, 0, Math.PI * 2);
+      ctx.fillStyle = color;
+      ctx.fill();
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = 'rgba(255,255,255,0.9)';
+      ctx.stroke();
+      ctx.fillStyle = '#fff';
+      ctx.font = 'bold 12px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(label, r, r + 1);
+      return { canvas, dpr };
+    }
+
+    AKIYA_KUBUN_LIST.forEach(kubun => {
+      AKIYA_TORIHIKI_LIST.forEach(torihiki => {
+        const id = 'akiya-icon-' + kubun + '-' + torihiki;
+        if (map.hasImage(id)) return;
+        const { canvas, dpr: ratio } = drawIcon(
+          AKIYA_KUBUN_COLOR[kubun] || '#666',
+          AKIYA_TORIHIKI_LABEL[torihiki] || '?'
+        );
+        const ctx = canvas.getContext('2d');
+        const raw = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        map.addImage(id, { width: canvas.width, height: canvas.height, data: new Uint8Array(raw.data.buffer) }, { pixelRatio: ratio });
+      });
+    });
+
+    akiyaIconsRegistered = true;
+  }
+
+  // 件数バッジ（同一地点に複数物件）用の小さい赤丸アイコンをCanvasで生成
+  function registerAkiyaBadgeIcon(count) {
+    const id = 'akiya-badge-' + count;
+    if (map.hasImage(id)) return id;
+    const dpr = window.devicePixelRatio || 1;
+    const size = 16;
+    const canvas = document.createElement('canvas');
+    canvas.width = size * dpr;
+    canvas.height = size * dpr;
+    const ctx = canvas.getContext('2d');
+    ctx.scale(dpr, dpr);
+    const r = size / 2;
+    ctx.beginPath();
+    ctx.arc(r, r, r - 1, 0, Math.PI * 2);
+    ctx.fillStyle = '#c0392b';
+    ctx.fill();
+    ctx.lineWidth = 1.5;
+    ctx.strokeStyle = '#fff';
+    ctx.stroke();
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 9px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(String(count), r, r + 1);
+    const raw = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    map.addImage(id, { width: canvas.width, height: canvas.height, data: new Uint8Array(raw.data.buffer) }, { pixelRatio: dpr });
+    return id;
+  }
 
   fetch(AKIYA_URL)
     .then(r => { if (!r.ok) throw new Error('fetch failed: akiya'); return r.json(); })
@@ -1083,70 +1170,114 @@ function loadAkiyaLayer() {
         groups.get(key).items.push(f.properties);
       });
 
+      registerAkiyaIcons();
+
       const radiusFeatures = [];
+      const pinFeatures = [];
 
       groups.forEach(group => {
         const { lng, lat, items } = group;
-        const primary = items[0]; // マーカーの色・記号は代表として先頭物件を使用
+        const primary = items[0]; // アイコンの色・記号は代表として先頭物件を使用
+        const count = items.length;
 
-        const el = document.createElement('div');
-        el.className = 'akiya-marker kubun-' + primary.kubun;
-        el.textContent = AKIYA_TORIHIKI_LABEL[primary.torihiki] || '?';
-        el.title = items.map(p => p.name).join(' / ');
+        if (count > 1) registerAkiyaBadgeIcon(count);
 
-        if (items.length > 1) {
-          const badge = document.createElement('div');
-          badge.className = 'akiya-marker-count';
-          badge.textContent = items.length;
-          el.appendChild(badge);
-        }
-
-        const marker = new maplibregl.Marker({ element: el })
-          .setLngLat([lng, lat]);
-
-        el.addEventListener('click', (ev) => {
-          ev.stopPropagation();
-          if (akiyaCurrentPopup) akiyaCurrentPopup.remove();
-
-          const cardsHtml = items.map(p => {
-            const priceRow = (p.price_man && p.price_man > 0)
-              ? '<div class="popup-row"><span>希望価格</span><span>' + p.price_man.toLocaleString() + '万円</span></div>'
-              : '';
-            const rentRow = (p.rent_yen && p.rent_yen > 0)
-              ? '<div class="popup-row"><span>希望賃料</span><span>' + p.rent_yen.toLocaleString() + '円/月</span></div>'
-              : '';
-            return (
-              '<div class="popup-item">' +
-              '<div class="popup-title">' + p.name + '</div>' +
-              '<div style="margin-bottom:6px;">' +
-              '<span class="popup-badge badge-' + p.kubun + '">' + AKIYA_KUBUN_TEXT[p.kubun] + '</span>' +
-              '<span class="popup-badge" style="background:#666;">' + AKIYA_TORIHIKI_TEXT[p.torihiki] + '</span>' +
-              '</div>' +
-              '<div class="popup-row"><span>所在地</span><span>' + p.addr + '</span></div>' +
-              priceRow + rentRow +
-              '<a class="popup-link" href="' + p.url + '" target="_blank" rel="noopener">市公式ページで見る（別タブ）</a>' +
-              '</div>'
-            );
-          }).join('<hr class="popup-divider">');
-
-          akiyaCurrentPopup = new maplibregl.Popup({ closeButton: true, maxWidth: '260px', className: 'akiya-popup' })
-            .setLngLat([lng, lat])
-            .setHTML(
-              '<div class="popup-inner">' +
-              (items.length > 1 ? '<div class="popup-group-title">この地点に' + items.length + '件</div>' : '') +
-              cardsHtml +
-              '<div class="popup-note">所在地は町丁目までの情報です（長崎市空き家空き地バンク公開情報）</div>' +
-              '</div>'
-            )
-            .addTo(map);
+        pinFeatures.push({
+          type: 'Feature',
+          geometry: { type: 'Point', coordinates: [lng, lat] },
+          properties: {
+            kubun: primary.kubun,
+            torihiki: primary.torihiki,
+            count: count,
+            badge_icon: count > 1 ? ('akiya-badge-' + count) : '',
+            items_json: JSON.stringify(items)
+          }
         });
-
-        marker.addTo(map);
-        akiyaMarkers.push(marker);
 
         if (window.turf) {
           radiusFeatures.push(turf.circle([lng, lat], AKIYA_PIN_RADIUS_KM, { steps: 32, units: 'kilometers' }));
         }
+      });
+
+      // ピン本体（色付き丸＋取引区分の文字）
+      map.addSource('akiya-pins', {
+        type: 'geojson',
+        data: { type: 'FeatureCollection', features: pinFeatures }
+      });
+      map.addLayer({
+        id: 'akiya-pins-icon',
+        type: 'symbol',
+        source: 'akiya-pins',
+        layout: {
+          visibility: 'visible',
+          'icon-image': ['concat', 'akiya-icon-', ['get', 'kubun'], '-', ['get', 'torihiki']],
+          'icon-size': 1,
+          'icon-allow-overlap': true,
+          'icon-ignore-placement': true
+        }
+      });
+      // 件数バッジ（複数物件が同一地点にある場合のみ、右上に少しずらして重ねる）
+      map.addLayer({
+        id: 'akiya-pins-badge-icon',
+        type: 'symbol',
+        source: 'akiya-pins',
+        filter: ['>', ['get', 'count'], 1],
+        layout: {
+          visibility: 'visible',
+          'icon-image': ['get', 'badge_icon'],
+          'icon-size': 1,
+          'icon-offset': [16, -16],
+          'icon-allow-overlap': true,
+          'icon-ignore-placement': true
+        }
+      });
+
+      function showAkiyaPinPopup(e) {
+        if (!e.features || !e.features.length) return;
+        if (akiyaCurrentPopup) akiyaCurrentPopup.remove();
+        if (currentPopup) { currentPopup.remove(); currentPopup = null; }
+        if (typeof viewspotCurrentPopup !== 'undefined' && viewspotCurrentPopup) { viewspotCurrentPopup.remove(); viewspotCurrentPopup = null; }
+
+        const props = e.features[0].properties;
+        const items = JSON.parse(props.items_json);
+
+        const cardsHtml = items.map(p => {
+          const priceRow = (p.price_man && p.price_man > 0)
+            ? '<div class="popup-row"><span>希望価格</span><span>' + p.price_man.toLocaleString() + '万円</span></div>'
+            : '';
+          const rentRow = (p.rent_yen && p.rent_yen > 0)
+            ? '<div class="popup-row"><span>希望賃料</span><span>' + p.rent_yen.toLocaleString() + '円/月</span></div>'
+            : '';
+          return (
+            '<div class="popup-item">' +
+            '<div class="popup-title">' + p.name + '</div>' +
+            '<div style="margin-bottom:6px;">' +
+            '<span class="popup-badge badge-' + p.kubun + '">' + AKIYA_KUBUN_TEXT[p.kubun] + '</span>' +
+            '<span class="popup-badge" style="background:#666;">' + AKIYA_TORIHIKI_TEXT[p.torihiki] + '</span>' +
+            '</div>' +
+            '<div class="popup-row"><span>所在地</span><span>' + p.addr + '</span></div>' +
+            priceRow + rentRow +
+            '<a class="popup-link" href="' + p.url + '" target="_blank" rel="noopener">市公式ページで見る（別タブ）</a>' +
+            '</div>'
+          );
+        }).join('<hr class="popup-divider">');
+
+        akiyaCurrentPopup = new maplibregl.Popup({ closeButton: true, maxWidth: '260px', className: 'akiya-popup' })
+          .setLngLat(e.features[0].geometry.coordinates)
+          .setHTML(
+            '<div class="popup-inner">' +
+            (items.length > 1 ? '<div class="popup-group-title">この地点に' + items.length + '件</div>' : '') +
+            cardsHtml +
+            '<div class="popup-note">所在地は町丁目までの情報です（長崎市空き家空き地バンク公開情報）</div>' +
+            '</div>'
+          )
+          .addTo(map);
+      }
+
+      ['akiya-pins-icon', 'akiya-pins-badge-icon'].forEach(layerId => {
+        map.on('click', layerId, e => { e.originalEvent.stopPropagation(); showAkiyaPinPopup(e); });
+        map.on('mouseenter', layerId, () => { map.getCanvas().style.cursor = 'pointer'; });
+        map.on('mouseleave', layerId, () => { map.getCanvas().style.cursor = ''; });
       });
 
       // 不確実性円レイヤー（ピンの下に敷く半透明の円）
@@ -1209,7 +1340,8 @@ function onAkiyaToggle(checked) {
       map.setLayoutProperty('akiya-rate-fill', 'visibility', 'none');
       map.setLayoutProperty('akiya-pin-radius-fill', 'visibility', 'none');
       map.setLayoutProperty('akiya-pin-radius-outline', 'visibility', 'none');
-      akiyaMarkers.forEach(m => m.remove());
+      map.setLayoutProperty('akiya-pins-icon', 'visibility', 'none');
+      map.setLayoutProperty('akiya-pins-badge-icon', 'visibility', 'none');
 
       const popOn  = document.getElementById('pop-checkbox').checked;
       const yotoOn = document.getElementById('yoto-checkbox').checked;
@@ -1452,6 +1584,7 @@ function showPopup(e) {
   const akiyaChkShow = document.getElementById('akiya-checkbox');
   if (akiyaChkShow && akiyaChkShow.checked) return;
   if (akiyaCurrentPopup) { akiyaCurrentPopup.remove(); akiyaCurrentPopup = null; }
+  if (typeof viewspotCurrentPopup !== 'undefined' && viewspotCurrentPopup) { viewspotCurrentPopup.remove(); viewspotCurrentPopup = null; }
   const p = e.features[0].properties;
   const name = p.S_NAME || '不明';
   const p22 = p.pop_y2022 > 0 ? p.pop_y2022 : null;
@@ -1636,7 +1769,9 @@ function loadYotoLayer() {
       map.on('click', 'yoto-fill', e => {
         if (!e.features || !e.features.length) return;
         if (selectedTown) return;
-        if (currentPopup) currentPopup.remove();
+        if (currentPopup) { currentPopup.remove(); currentPopup = null; }
+        if (akiyaCurrentPopup) { akiyaCurrentPopup.remove(); akiyaCurrentPopup = null; }
+        if (typeof viewspotCurrentPopup !== 'undefined' && viewspotCurrentPopup) { viewspotCurrentPopup.remove(); viewspotCurrentPopup = null; }
 
         const yotoName = e.features[0].properties.YoutoName || '不明';
         const townFeatures = map.queryRenderedFeatures(e.point, { layers: ['pop-fill'] });
