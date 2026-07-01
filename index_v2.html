@@ -1042,6 +1042,8 @@ function loadAkiyaLayer() {
         if (popFeatures.length) return;
 
         if (akiyaCurrentPopup) akiyaCurrentPopup.remove();
+        if (currentPopup) { currentPopup.remove(); currentPopup = null; }
+        if (typeof viewspotCurrentPopup !== 'undefined' && viewspotCurrentPopup) { viewspotCurrentPopup.remove(); viewspotCurrentPopup = null; }
 
         const p = e.features[0].properties;
         const PopupClass = window.maplibregl ? window.maplibregl.Popup : null;
@@ -1120,8 +1122,8 @@ function loadAkiyaLayer() {
           AKIYA_TORIHIKI_LABEL[torihiki] || '?'
         );
         const ctx = canvas.getContext('2d');
-        const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-        map.addImage(id, imgData, { pixelRatio: ratio });
+        const raw = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        map.addImage(id, { width: canvas.width, height: canvas.height, data: new Uint8Array(raw.data.buffer) }, { pixelRatio: ratio });
       });
     });
 
@@ -1152,8 +1154,8 @@ function loadAkiyaLayer() {
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText(String(count), r, r + 1);
-    const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-    map.addImage(id, imgData, { pixelRatio: dpr });
+    const raw = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    map.addImage(id, { width: canvas.width, height: canvas.height, data: new Uint8Array(raw.data.buffer) }, { pixelRatio: dpr });
     return id;
   }
 
@@ -1233,6 +1235,8 @@ function loadAkiyaLayer() {
       function showAkiyaPinPopup(e) {
         if (!e.features || !e.features.length) return;
         if (akiyaCurrentPopup) akiyaCurrentPopup.remove();
+        if (currentPopup) { currentPopup.remove(); currentPopup = null; }
+        if (typeof viewspotCurrentPopup !== 'undefined' && viewspotCurrentPopup) { viewspotCurrentPopup.remove(); viewspotCurrentPopup = null; }
 
         const props = e.features[0].properties;
         const items = JSON.parse(props.items_json);
@@ -1580,6 +1584,7 @@ function showPopup(e) {
   const akiyaChkShow = document.getElementById('akiya-checkbox');
   if (akiyaChkShow && akiyaChkShow.checked) return;
   if (akiyaCurrentPopup) { akiyaCurrentPopup.remove(); akiyaCurrentPopup = null; }
+  if (typeof viewspotCurrentPopup !== 'undefined' && viewspotCurrentPopup) { viewspotCurrentPopup.remove(); viewspotCurrentPopup = null; }
   const p = e.features[0].properties;
   const name = p.S_NAME || '不明';
   const p22 = p.pop_y2022 > 0 ? p.pop_y2022 : null;
@@ -1764,7 +1769,9 @@ function loadYotoLayer() {
       map.on('click', 'yoto-fill', e => {
         if (!e.features || !e.features.length) return;
         if (selectedTown) return;
-        if (currentPopup) currentPopup.remove();
+        if (currentPopup) { currentPopup.remove(); currentPopup = null; }
+        if (akiyaCurrentPopup) { akiyaCurrentPopup.remove(); akiyaCurrentPopup = null; }
+        if (typeof viewspotCurrentPopup !== 'undefined' && viewspotCurrentPopup) { viewspotCurrentPopup.remove(); viewspotCurrentPopup = null; }
 
         const yotoName = e.features[0].properties.YoutoName || '不明';
         const townFeatures = map.queryRenderedFeatures(e.point, { layers: ['pop-fill'] });
