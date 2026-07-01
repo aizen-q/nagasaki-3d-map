@@ -1195,7 +1195,15 @@ function loadAkiyaLayer() {
         });
 
         if (window.turf) {
-          radiusFeatures.push(turf.circle([lng, lat], AKIYA_PIN_RADIUS_KM, { steps: 32, units: 'kilometers' }));
+          // 同心円を5枚重ねて中心に向かって自然に濃くなる「もや」のような
+          // 見た目を作る（GLの塗りレイヤーに直接のぼかし機能が無いため）。
+          // 外側から内側の順に追加し、内側の円ほど下の円と重なって濃く見える。
+          const ringFractions = [1.0, 0.8, 0.6, 0.4, 0.2];
+          ringFractions.forEach((frac, idx) => {
+            const circle = turf.circle([lng, lat], AKIYA_PIN_RADIUS_KM * frac, { steps: 32, units: 'kilometers' });
+            circle.properties = { ring: idx }; // 0 = 一番外側
+            radiusFeatures.push(circle);
+          });
         }
       });
 
@@ -1291,12 +1299,13 @@ function loadAkiyaLayer() {
           type: 'fill',
           source: 'akiya-pin-radius',
           layout: { visibility: 'visible' },
-          paint: { 'fill-color': '#666666', 'fill-opacity': 0.18 }
+          paint: { 'fill-color': '#555555', 'fill-opacity': 0.14 }
         }, 'town-highlight-fill');
         map.addLayer({
           id: 'akiya-pin-radius-outline',
           type: 'line',
           source: 'akiya-pin-radius',
+          filter: ['==', ['get', 'ring'], 0],
           layout: { visibility: 'visible' },
           paint: { 'line-color': '#888888', 'line-width': 1, 'line-dasharray': [2, 2] }
         }, 'town-highlight-fill');
