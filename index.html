@@ -189,6 +189,30 @@
       #aizen-link { display:flex; }
     }
 
+    /* MAP-FLOW-1：自動再生（源泉かけ流し）ボタン */
+    #autoplay-btn {
+      position:absolute; top:12px; left:50%; transform:translateX(-50%); z-index:150;
+      background:rgba(255,255,255,0.97); border:none; border-radius:20px;
+      padding:8px 16px; font-size:12px; font-weight:700; color:#1B6E6C;
+      cursor:pointer; box-shadow:0 2px 10px rgba(0,0,0,0.18);
+      display:flex; align-items:center; gap:6px; white-space:nowrap;
+      transition:background 0.2s, color 0.2s;
+    }
+    #autoplay-btn:hover { background:#fff; }
+    #autoplay-btn.playing { color:#fff; background:#1B6E6C; }
+    #autoplay-btn .autoplay-icon { font-size:13px; }
+    .autoplay-active-chome {
+      font-weight:900 !important; background:#FFE0B2; padding:1px 5px;
+      border-radius:4px; color:#B75B00 !important; text-decoration:none !important;
+    }
+    @media(max-width:600px) {
+      #autoplay-btn { padding:6px 10px; font-size:10px; max-width:78vw; }
+      #autoplay-btn #autoplay-label { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    }
+    @media(max-width:380px) {
+      #autoplay-btn #autoplay-label { display:none; }
+    }
+
     /* Popup */
     .maplibregl-popup-content { border-radius:10px; padding:0; box-shadow:0 4px 16px rgba(0,0,0,0.15); min-width:180px; }
     /* ×ボタンを全ポップアップ共通で大きく・押しやすく */
@@ -591,6 +615,12 @@
   <button class="view-btn active" id="btn-standard" onclick="setMapView('standard')">地図</button>
   <button class="view-btn" id="btn-satellite" onclick="setMapView('satellite')">航空写真</button>
 </div>
+
+<!-- MAP-FLOW-1：自動再生（源泉かけ流し）ボタン -->
+<button id="autoplay-btn" onclick="toggleAutoplayButton()" title="自動再生の再生・停止">
+  <span class="autoplay-icon" id="autoplay-icon">&#x25B6;</span>
+  <span id="autoplay-label">自動再生を開始</span>
+</button>
 
 <!-- Legend (デフォルト表示) -->
 <div id="pop-legend" class="visible">
@@ -1355,6 +1385,8 @@ function loadAkiyaLayer() {
           )
           .addTo(map);
       }
+      // MAP-FLOW-1：自動再生ループから呼び出せるように公開する（動作は変更しない）
+      window.showAkiyaPinPopup = showAkiyaPinPopup;
 
       ['akiya-pins-icon', 'akiya-pins-badge-icon'].forEach(layerId => {
         map.on('click', layerId, e => { e.originalEvent.stopPropagation(); showAkiyaPinPopup(e); });
@@ -2692,6 +2724,284 @@ function sendTownSearchEvent(townName) {
   }
 })();
 
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// MAP-FLOW-1：源泉かけ流し（自動再生）
+// 対象：本ページ内の既存機能のみ（価格フィルタリング・路面電車徒歩圏表示・
+// 空き家バンクピン・ポップアップ/凡例）。ユーザー操作で停止する。
+// 260704-worklog_MAP-FLOW-1範囲修正.docx 2章の実装手順に対応。
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+let autoplayActive = false;
+let autoplayApplyingChange = false; // 自動再生自身の操作中はtrue（停止検知のガード）
+let autoplayStartedAt = null;
+let autoplayLoopToken = 0; // 再生ごとに更新。値が変われば古いループは自動的に止まる
+
+const AUTOPLAY_STEP_MS = {
+  opening: 3000,
+  satellite: 4000,
+  popOff: 1500,
+  akiyaOn: 4000,
+  tramSelect: 3000,
+  circleOn: 4000,
+  afterElev: 1500,
+  hamamachi: 6000,
+  pinTap: 5000
+};
+
+function sendAutoplayEvent(action, extra) {
+  try {
+    window.parent.postMessage(Object.assign({
+      event: 'map_autoplay',
+      action: action
+    }, extra || {}), 'https://aizen2024.com');
+  } catch (e) {}
+}
+
+function autoplaySleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+// 自動再生自身が行うトグル操作を「ユーザー操作」と誤検知しないためのラッパー
+function autoplaySet(fn) {
+  autoplayApplyingChange = true;
+  try { fn(); } finally {
+    setTimeout(() => { autoplayApplyingChange = false; }, 0);
+  }
+}
+
+function resetToOpeningState() {
+  autoplaySet(() => {
+    if (currentPopup) { currentPopup.remove(); currentPopup = null; }
+    if (akiyaCurrentPopup) { akiyaCurrentPopup.remove(); akiyaCurrentPopup = null; }
+    if (typeof viewspotCurrentPopup !== 'undefined' && viewspotCurrentPopup) { viewspotCurrentPopup.remove(); viewspotCurrentPopup = null; }
+    if (typeof tramStopCurrentPopup !== 'undefined' && tramStopCurrentPopup) { tramStopCurrentPopup.remove(); tramStopCurrentPopup = null; }
+    hideAerialRoute();
+
+    // 栄町ハイライトなどで選択された町丁目をリセット
+    selectedTown = null;
+    document.getElementById('area-info').classList.remove('active');
+    document.querySelectorAll('.autoplay-active-chome').forEach(el => el.classList.remove('autoplay-active-chome'));
+    if (layersReady) {
+      map.setFilter('town-highlight-fill',   ['==', 'S_NAME', '__none__']);
+      map.setFilter('town-highlight-outline', ['==', 'S_NAME', '__none__']);
+      map.setPaintProperty('town-highlight-fill', 'fill-color', '#1B6E6C');
+      map.setPaintProperty('town-highlight-fill', 'fill-opacity', 0.55);
+    }
+
+    setMapView('standard');
+
+    const akiyaChk = document.getElementById('akiya-checkbox');
+    if (akiyaChk.checked) { akiyaChk.checked = false; onAkiyaToggle(false); }
+
+    const tramSelect = document.getElementById('tram-walk-select');
+    if (tramSelect.value !== '') { tramSelect.value = ''; onTramStopChange(); }
+
+    const popChk = document.getElementById('pop-checkbox');
+    if (!popChk.checked) { popChk.checked = true; onPopToggle(true); }
+
+    map.jumpTo({ center: INITIAL_CENTER, zoom: INITIAL_ZOOM, pitch: INITIAL_PITCH, bearing: INITIAL_BEARING });
+  });
+}
+
+function waitForAkiyaReady(timeoutMs) {
+  return new Promise((resolve, reject) => {
+    const start = Date.now();
+    (function poll() {
+      if (akiyaLayerReady) return resolve();
+      if (Date.now() - start > timeoutMs) return reject(new Error('akiya layer timeout'));
+      setTimeout(poll, 200);
+    })();
+  });
+}
+
+// 標高差30m以内トグルの計算完了を待つ（2回目以降はキャッシュ済みで即完了）
+function waitForTramElevReady(idx, timeoutMs) {
+  return new Promise((resolve, reject) => {
+    const start = Date.now();
+    (function poll() {
+      if (tramElevCache[idx]) return resolve();
+      if (Date.now() - start > timeoutMs) return reject(new Error('elevation calc timeout'));
+      setTimeout(poll, 300);
+    })();
+  });
+}
+
+function findNearestAkiyaPin(lat, lon) {
+  if (!map.getLayer('akiya-pins-icon')) return null;
+  const point = map.project([lon, lat]);
+  const nearby = map.queryRenderedFeatures(
+    [[point.x - 80, point.y - 80], [point.x + 80, point.y + 80]],
+    { layers: ['akiya-pins-icon', 'akiya-pins-badge-icon'] }
+  );
+  if (!nearby.length) return null;
+  nearby.sort((a, b) => {
+    const da = Math.hypot(a.geometry.coordinates[0] - lon, a.geometry.coordinates[1] - lat);
+    const db = Math.hypot(b.geometry.coordinates[0] - lon, b.geometry.coordinates[1] - lat);
+    return da - db;
+  });
+  return nearby[0];
+}
+
+async function runAutoplayLoop(myToken) {
+  while (autoplayActive && myToken === autoplayLoopToken) {
+    // 1. オープニング
+    resetToOpeningState();
+    await autoplaySleep(AUTOPLAY_STEP_MS.opening);
+    if (myToken !== autoplayLoopToken) return;
+
+    // 2. 航空写真（トグル切替）
+    autoplaySet(() => setMapView('satellite'));
+    await autoplaySleep(AUTOPLAY_STEP_MS.satellite);
+    if (myToken !== autoplayLoopToken) return;
+
+    // 3. 人口増減を表示OFF
+    autoplaySet(() => {
+      document.getElementById('pop-checkbox').checked = false;
+      onPopToggle(false);
+    });
+    await autoplaySleep(AUTOPLAY_STEP_MS.popOff);
+    if (myToken !== autoplayLoopToken) return;
+
+    // 4. 空き家バンクを表示ON
+    autoplaySet(() => {
+      document.getElementById('akiya-checkbox').checked = true;
+      onAkiyaToggle(true);
+    });
+    try { await waitForAkiyaReady(8000); } catch (e) { /* 読み込み失敗時はこの周は進める */ }
+    await autoplaySleep(AUTOPLAY_STEP_MS.akiyaOn);
+    if (myToken !== autoplayLoopToken) return;
+
+    // 5〜8. 電停（思案橋）関連
+    const shianbashiIdx = tramStops.findIndex(s => s.name === '思案橋');
+    if (shianbashiIdx >= 0) {
+      // 5. 電停を選択
+      autoplaySet(() => {
+        document.getElementById('tram-walk-select').value = String(shianbashiIdx);
+        onTramStopChange();
+      });
+      await autoplaySleep(AUTOPLAY_STEP_MS.tramSelect);
+      if (myToken !== autoplayLoopToken) return;
+
+      // 6. 半径800mを表示
+      autoplaySet(() => {
+        document.getElementById('tram-circle-checkbox').checked = true;
+        onTramCircleToggle(true);
+      });
+      await autoplaySleep(AUTOPLAY_STEP_MS.circleOn);
+      if (myToken !== autoplayLoopToken) return;
+
+      // 7. 標高差30m以内の徒歩圏を表示（計算完了を待ってから進む）
+      autoplaySet(() => {
+        document.getElementById('tram-elev-checkbox').checked = true;
+        onTramElevToggle(true);
+      });
+      try { await waitForTramElevReady(shianbashiIdx, 20000); } catch (e) { /* 計算未完了でもこの周は進める */ }
+      await autoplaySleep(AUTOPLAY_STEP_MS.afterElev);
+      if (myToken !== autoplayLoopToken) return;
+
+      // 7.5. 徒歩圏内リストの一番上に表示されている「栄町」をハイライト表示
+      // （リストをスクロールしなくても対応関係が分かるように、先頭表示の町を選ぶ。
+      //   リスト側の項目自体も一時的に太字＋オレンジ背景にして対応関係を強調する）
+      const eichomeLinkEl = document.querySelector('.tram-chome-link[data-name="栄町"]');
+      autoplaySet(() => {
+        map.setPaintProperty('town-highlight-fill', 'fill-color', '#FF6D00');
+        map.setPaintProperty('town-highlight-fill', 'fill-opacity', 0.75);
+        if (eichomeLinkEl) eichomeLinkEl.classList.add('autoplay-active-chome');
+        highlightChomeGently('栄町');
+      });
+      await autoplaySleep(AUTOPLAY_STEP_MS.hamamachi);
+      if (myToken !== autoplayLoopToken) return;
+      autoplaySet(() => {
+        map.setPaintProperty('town-highlight-fill', 'fill-color', '#1B6E6C');
+        map.setPaintProperty('town-highlight-fill', 'fill-opacity', 0.55);
+        if (eichomeLinkEl) eichomeLinkEl.classList.remove('autoplay-active-chome');
+      });
+
+      // 8. 近くの空き家バンク登録物件のピンをタップしてポップアップ表示
+      // （栄町ハイライトで視点が移動しているため、ピン検索の前に電停へ視点を戻す）
+      const stop = tramStops[shianbashiIdx];
+      autoplaySet(() => {
+        map.flyTo({ center: [stop.lon, stop.lat], zoom: 14.3, duration: 800 });
+      });
+      await autoplaySleep(900);
+      if (myToken !== autoplayLoopToken) return;
+      const pin = findNearestAkiyaPin(stop.lat, stop.lon);
+      if (pin && typeof window.showAkiyaPinPopup === 'function') {
+        autoplaySet(() => window.showAkiyaPinPopup({ features: [pin] }));
+      }
+      await autoplaySleep(AUTOPLAY_STEP_MS.pinTap);
+      if (myToken !== autoplayLoopToken) return;
+    }
+    // ループの先頭（1. オープニング）へ戻る
+  }
+}
+
+function startAutoplay(isInitial) {
+  if (autoplayActive) return;
+  autoplayActive = true;
+  autoplayStartedAt = Date.now();
+  autoplayLoopToken++;
+  updateAutoplayButton();
+  sendAutoplayEvent('start', { trigger: isInitial ? 'page_load' : 'manual_button' });
+  runAutoplayLoop(autoplayLoopToken);
+}
+
+function stopAutoplay(reason) {
+  if (!autoplayActive) return;
+  const durationSec = autoplayStartedAt ? Math.round((Date.now() - autoplayStartedAt) / 1000) : 0;
+  autoplayActive = false;
+  autoplayLoopToken++; // 実行中のループを安全に止める
+  updateAutoplayButton();
+  sendAutoplayEvent('stop', { stop_reason: reason, duration_sec: durationSec });
+}
+
+function toggleAutoplayButton() {
+  if (autoplayActive) {
+    stopAutoplay('manual_button');
+  } else {
+    startAutoplay(false);
+  }
+}
+
+function updateAutoplayButton() {
+  const btn = document.getElementById('autoplay-btn');
+  if (!btn) return;
+  const icon = document.getElementById('autoplay-icon');
+  const label = document.getElementById('autoplay-label');
+  btn.classList.toggle('playing', autoplayActive);
+  icon.innerHTML = autoplayActive ? '&#x23F8;' : '&#x25B6;';
+  label.textContent = autoplayActive ? '自動再生中（タップで停止）' : '自動再生を開始';
+}
+
+// ── 停止検知：地図への直接操作・フィルターUI操作で自動再生を止める ──
+// map.on('zoomstart'/'dragstart'など)は自動再生自身のflyTo()でも発火するため使わず、
+// 実機の入力イベント（マウス/タッチ/ホイール）のみを対象にする。
+function handleUserInteraction() {
+  if (autoplayApplyingChange) return;
+  if (autoplayActive) stopAutoplay('user_interaction');
+}
+
+const autoplayCanvasEl = map.getCanvasContainer();
+['mousedown', 'touchstart', 'wheel', 'dblclick'].forEach(evt => {
+  autoplayCanvasEl.addEventListener(evt, handleUserInteraction, { passive: true });
+});
+
+document.querySelectorAll('#panel input, #panel select').forEach(el => {
+  el.addEventListener('input', handleUserInteraction);
+  el.addEventListener('change', handleUserInteraction);
+});
+document.querySelectorAll('#view-toggle button, .quick-btn, #toggle-btn, #pc-toggle, #panel-close').forEach(el => {
+  el.addEventListener('click', handleUserInteraction);
+});
+
+// prefers-reduced-motion：自動開始せず、ボタンから明示的に開始してもらう
+const autoplayPrefersReducedMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+if (!autoplayPrefersReducedMotion) {
+  setTimeout(() => startAutoplay(true), 1500);
+} else {
+  updateAutoplayButton();
+}
 
 </script>
 
