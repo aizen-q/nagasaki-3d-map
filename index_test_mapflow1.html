@@ -201,6 +201,13 @@
     #autoplay-btn:hover { background:#fff; }
     #autoplay-btn.playing { color:#fff; background:#1B6E6C; }
     #autoplay-btn .autoplay-icon { font-size:13px; }
+    @media(max-width:600px) {
+      #autoplay-btn { padding:6px 10px; font-size:10px; max-width:78vw; }
+      #autoplay-btn #autoplay-label { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    }
+    @media(max-width:380px) {
+      #autoplay-btn #autoplay-label { display:none; }
+    }
 
     /* Popup */
     .maplibregl-popup-content { border-radius:10px; padding:0; box-shadow:0 4px 16px rgba(0,0,0,0.15); min-width:180px; }
@@ -2733,6 +2740,7 @@ const AUTOPLAY_STEP_MS = {
   tramSelect: 3000,
   circleOn: 4000,
   afterElev: 1500,
+  hamamachi: 3000,
   pinTap: 5000
 };
 
@@ -2764,6 +2772,14 @@ function resetToOpeningState() {
     if (typeof viewspotCurrentPopup !== 'undefined' && viewspotCurrentPopup) { viewspotCurrentPopup.remove(); viewspotCurrentPopup = null; }
     if (typeof tramStopCurrentPopup !== 'undefined' && tramStopCurrentPopup) { tramStopCurrentPopup.remove(); tramStopCurrentPopup = null; }
     hideAerialRoute();
+
+    // 浜町ハイライトなどで選択された町丁目をリセット
+    selectedTown = null;
+    document.getElementById('area-info').classList.remove('active');
+    if (layersReady) {
+      map.setFilter('town-highlight-fill',   ['==', 'S_NAME', '__none__']);
+      map.setFilter('town-highlight-outline', ['==', 'S_NAME', '__none__']);
+    }
 
     setMapView('standard');
 
@@ -2876,8 +2892,19 @@ async function runAutoplayLoop(myToken) {
       await autoplaySleep(AUTOPLAY_STEP_MS.afterElev);
       if (myToken !== autoplayLoopToken) return;
 
+      // 7.5. 徒歩圏内リストから「浜町」をハイライト表示
+      autoplaySet(() => highlightChomeGently('浜町'));
+      await autoplaySleep(AUTOPLAY_STEP_MS.hamamachi);
+      if (myToken !== autoplayLoopToken) return;
+
       // 8. 近くの空き家バンク登録物件のピンをタップしてポップアップ表示
+      // （浜町ハイライトで視点が移動しているため、ピン検索の前に電停へ視点を戻す）
       const stop = tramStops[shianbashiIdx];
+      autoplaySet(() => {
+        map.flyTo({ center: [stop.lon, stop.lat], zoom: 14.3, duration: 800 });
+      });
+      await autoplaySleep(900);
+      if (myToken !== autoplayLoopToken) return;
       const pin = findNearestAkiyaPin(stop.lat, stop.lon);
       if (pin && typeof window.showAkiyaPinPopup === 'function') {
         autoplaySet(() => window.showAkiyaPinPopup({ features: [pin] }));
