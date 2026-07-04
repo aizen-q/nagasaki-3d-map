@@ -201,6 +201,10 @@
     #autoplay-btn:hover { background:#fff; }
     #autoplay-btn.playing { color:#fff; background:#1B6E6C; }
     #autoplay-btn .autoplay-icon { font-size:13px; }
+    .autoplay-active-chome {
+      font-weight:900 !important; background:#FFE0B2; padding:1px 5px;
+      border-radius:4px; color:#B75B00 !important; text-decoration:none !important;
+    }
     @media(max-width:600px) {
       #autoplay-btn { padding:6px 10px; font-size:10px; max-width:78vw; }
       #autoplay-btn #autoplay-label { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
@@ -2773,9 +2777,10 @@ function resetToOpeningState() {
     if (typeof tramStopCurrentPopup !== 'undefined' && tramStopCurrentPopup) { tramStopCurrentPopup.remove(); tramStopCurrentPopup = null; }
     hideAerialRoute();
 
-    // 浜町ハイライトなどで選択された町丁目をリセット
+    // 栄町ハイライトなどで選択された町丁目をリセット
     selectedTown = null;
     document.getElementById('area-info').classList.remove('active');
+    document.querySelectorAll('.autoplay-active-chome').forEach(el => el.classList.remove('autoplay-active-chome'));
     if (layersReady) {
       map.setFilter('town-highlight-fill',   ['==', 'S_NAME', '__none__']);
       map.setFilter('town-highlight-outline', ['==', 'S_NAME', '__none__']);
@@ -2894,23 +2899,26 @@ async function runAutoplayLoop(myToken) {
       await autoplaySleep(AUTOPLAY_STEP_MS.afterElev);
       if (myToken !== autoplayLoopToken) return;
 
-      // 7.5. 徒歩圏内リストから「浜町」をハイライト表示
-      // （通常のハイライト色は標高差30m以内の青塗りに近く目立ちにくいため、
-      //   自動再生中だけ一時的に目立つオレンジ色に変更する）
+      // 7.5. 徒歩圏内リストの一番上に表示されている「栄町」をハイライト表示
+      // （リストをスクロールしなくても対応関係が分かるように、先頭表示の町を選ぶ。
+      //   リスト側の項目自体も一時的に太字＋オレンジ背景にして対応関係を強調する）
+      const eichomeLinkEl = document.querySelector('.tram-chome-link[data-name="栄町"]');
       autoplaySet(() => {
         map.setPaintProperty('town-highlight-fill', 'fill-color', '#FF6D00');
         map.setPaintProperty('town-highlight-fill', 'fill-opacity', 0.75);
-        highlightChomeGently('浜町');
+        if (eichomeLinkEl) eichomeLinkEl.classList.add('autoplay-active-chome');
+        highlightChomeGently('栄町');
       });
       await autoplaySleep(AUTOPLAY_STEP_MS.hamamachi);
       if (myToken !== autoplayLoopToken) return;
       autoplaySet(() => {
         map.setPaintProperty('town-highlight-fill', 'fill-color', '#1B6E6C');
         map.setPaintProperty('town-highlight-fill', 'fill-opacity', 0.55);
+        if (eichomeLinkEl) eichomeLinkEl.classList.remove('autoplay-active-chome');
       });
 
       // 8. 近くの空き家バンク登録物件のピンをタップしてポップアップ表示
-      // （浜町ハイライトで視点が移動しているため、ピン検索の前に電停へ視点を戻す）
+      // （栄町ハイライトで視点が移動しているため、ピン検索の前に電停へ視点を戻す）
       const stop = tramStops[shianbashiIdx];
       autoplaySet(() => {
         map.flyTo({ center: [stop.lon, stop.lat], zoom: 14.3, duration: 800 });
