@@ -2761,6 +2761,13 @@ function autoplaySleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
+// 左パネルを、今操作している項目が見える位置まで自動でスクロールする
+// （地図の動きとパネルの表示の連動感を出すため）
+function scrollPanelTo(el, block) {
+  if (!el || typeof el.scrollIntoView !== 'function') return;
+  el.scrollIntoView({ behavior: 'smooth', block: block || 'center' });
+}
+
 // 自動再生自身が行うトグル操作を「ユーザー操作」と誤検知しないためのラッパー
 function autoplaySet(fn) {
   autoplayApplyingChange = true;
@@ -2798,6 +2805,10 @@ function resetToOpeningState() {
 
     const popChk = document.getElementById('pop-checkbox');
     if (!popChk.checked) { popChk.checked = true; onPopToggle(true); }
+
+    // パネルを一番上に戻す（次の周のオープニングに合わせて）
+    const panelEl = document.getElementById('panel');
+    if (panelEl) panelEl.scrollTo({ top: 0, behavior: 'smooth' });
 
     map.jumpTo({ center: INITIAL_CENTER, zoom: INITIAL_ZOOM, pitch: INITIAL_PITCH, bearing: INITIAL_BEARING });
   });
@@ -2858,6 +2869,7 @@ async function runAutoplayLoop(myToken) {
     autoplaySet(() => {
       document.getElementById('pop-checkbox').checked = false;
       onPopToggle(false);
+      scrollPanelTo(document.getElementById('pop-checkbox'));
     });
     await autoplaySleep(AUTOPLAY_STEP_MS.popOff);
     if (myToken !== autoplayLoopToken) return;
@@ -2866,6 +2878,7 @@ async function runAutoplayLoop(myToken) {
     autoplaySet(() => {
       document.getElementById('akiya-checkbox').checked = true;
       onAkiyaToggle(true);
+      scrollPanelTo(document.getElementById('akiya-checkbox'));
     });
     try { await waitForAkiyaReady(8000); } catch (e) { /* 読み込み失敗時はこの周は進める */ }
     await autoplaySleep(AUTOPLAY_STEP_MS.akiyaOn);
@@ -2878,6 +2891,7 @@ async function runAutoplayLoop(myToken) {
       autoplaySet(() => {
         document.getElementById('tram-walk-select').value = String(shianbashiIdx);
         onTramStopChange();
+        scrollPanelTo(document.getElementById('tram-walk-select'));
       });
       await autoplaySleep(AUTOPLAY_STEP_MS.tramSelect);
       if (myToken !== autoplayLoopToken) return;
@@ -2886,6 +2900,7 @@ async function runAutoplayLoop(myToken) {
       autoplaySet(() => {
         document.getElementById('tram-circle-checkbox').checked = true;
         onTramCircleToggle(true);
+        scrollPanelTo(document.getElementById('tram-circle-checkbox'), 'nearest');
       });
       await autoplaySleep(AUTOPLAY_STEP_MS.circleOn);
       if (myToken !== autoplayLoopToken) return;
@@ -2894,6 +2909,7 @@ async function runAutoplayLoop(myToken) {
       autoplaySet(() => {
         document.getElementById('tram-elev-checkbox').checked = true;
         onTramElevToggle(true);
+        scrollPanelTo(document.getElementById('tram-elev-checkbox'), 'nearest');
       });
       try { await waitForTramElevReady(shianbashiIdx, 20000); } catch (e) { /* 計算未完了でもこの周は進める */ }
       await autoplaySleep(AUTOPLAY_STEP_MS.afterElev);
@@ -2906,7 +2922,10 @@ async function runAutoplayLoop(myToken) {
       autoplaySet(() => {
         map.setPaintProperty('town-highlight-fill', 'fill-color', '#FF6D00');
         map.setPaintProperty('town-highlight-fill', 'fill-opacity', 0.75);
-        if (eichomeLinkEl) eichomeLinkEl.classList.add('autoplay-active-chome');
+        if (eichomeLinkEl) {
+          eichomeLinkEl.classList.add('autoplay-active-chome');
+          scrollPanelTo(eichomeLinkEl, 'center');
+        }
         highlightChomeGently('栄町');
       });
       await autoplaySleep(AUTOPLAY_STEP_MS.hamamachi);
