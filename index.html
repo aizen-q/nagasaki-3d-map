@@ -17,6 +17,10 @@
   <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@turf/turf@6/turf.min.js"></script>
   <style>
+    :root {
+      /* MAP-FLOW-1 UX改善（v2）：スマホでパネルが地図を覆いすぎないよう55vh→46vhに縮小 */
+      --mp-panel-h: 46vh;
+    }
     * { margin:0; padding:0; box-sizing:border-box; }
     html, body { width:100%; height:100%; overflow:hidden; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
     #loading {
@@ -206,11 +210,42 @@
       border-radius:4px; color:#B75B00 !important; text-decoration:none !important;
     }
     @media(max-width:600px) {
-      #autoplay-btn { padding:6px 10px; font-size:10px; max-width:78vw; }
-      #autoplay-btn #autoplay-label { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-    }
-    @media(max-width:380px) {
+      /* MAP-FLOW-1 UX改善（v3）：ラベルを消してアイコンのみの丸ボタンに。
+         上段（検索・メニュー／ズーム＋−）と被らないよう少し下（top:56px）に配置 */
+      #autoplay-btn {
+        top:56px; left:50%; transform:translateX(-50%);
+        width:40px; height:40px; padding:0; border-radius:50%;
+        justify-content:center; max-width:none;
+      }
       #autoplay-btn #autoplay-label { display:none; }
+      #autoplay-btn .autoplay-icon { font-size:17px; }
+    }
+
+    /* MAP-FLOW-1 UX改善（v2）：自動再生の開始・一時停止を知らせるトースト */
+    #autoplay-toast {
+      position:absolute; left:50%; bottom:16px; transform:translateX(-50%) translateY(12px);
+      z-index:300; max-width:calc(100vw - 32px);
+      background:rgba(27,45,38,0.94); color:#fff; border-radius:12px;
+      padding:11px 14px; box-shadow:0 6px 20px rgba(0,0,0,0.28);
+      display:flex; align-items:center; gap:10px;
+      font-size:12px; line-height:1.5;
+      opacity:0; pointer-events:none;
+      transition:opacity 0.25s ease, transform 0.25s ease;
+    }
+    #autoplay-toast.visible { opacity:1; transform:translateX(-50%) translateY(0); pointer-events:auto; }
+    #autoplay-toast .at-msg { flex:1; }
+    #autoplay-toast .at-resume {
+      flex-shrink:0; background:#fff; color:#1B6E6C; border:none; border-radius:8px;
+      padding:7px 12px; font-size:12px; font-weight:700; cursor:pointer; white-space:nowrap;
+    }
+    #autoplay-toast .at-resume:hover { background:#eafaf5; }
+    #autoplay-toast .at-close {
+      flex-shrink:0; background:none; border:none; color:rgba(255,255,255,0.7);
+      font-size:16px; line-height:1; cursor:pointer; padding:0 2px;
+    }
+    @media(max-width:600px) {
+      /* view-toggle（地図/航空写真ボタン）の上に重ならない位置に配置 */
+      #autoplay-toast { bottom:calc(var(--mp-panel-h) + 60px); font-size:11px; padding:10px 12px; }
     }
 
     /* Popup */
@@ -252,7 +287,7 @@
     .view-btn.active { background:#4A6741; color:white; }
     .view-btn:first-child { border-right:1px solid #e0e0e0; }
     @media(max-width:600px){
-      #view-toggle { bottom:calc(55vh + 16px); left:12px; right:auto; }
+      #view-toggle { bottom:calc(var(--mp-panel-h) + 16px); left:12px; right:auto; }
     }
     @media(min-width:601px){
       #view-toggle { bottom:12px; left:12px; right:auto; }
@@ -278,7 +313,7 @@
     .maplibregl-ctrl-group { border-radius:8px; overflow:hidden; }
     @media (max-width:600px) {
       #panel {
-        width:calc(100vw - 24px); max-height:55vh;
+        width:calc(100vw - 24px); max-height:var(--mp-panel-h);
         top:auto; bottom:0; left:0; right:0; margin:0 12px 12px;
         border-radius:14px 14px 10px 10px;
       }
@@ -292,6 +327,30 @@
       #aizen-link { bottom:96px; right:16px; }
       #pop-legend { bottom:16px; left:12px; }
       #yoto-legend { bottom:16px; left:12px; right:auto; max-height:50vh; }
+
+      /* MAP-FLOW-1 UX改善（v3）：自動再生中（モバイルのみ）は
+         フルパネル・各凡例を出さず、キャプション1行のみで見せる */
+      body.autoplay-mobile-compact #panel,
+      body.autoplay-mobile-compact #pop-legend,
+      body.autoplay-mobile-compact #yoto-legend,
+      body.autoplay-mobile-compact #akiya-legend,
+      body.autoplay-mobile-compact #akiya-pin-legend {
+        display:none !important;
+      }
+      body.autoplay-mobile-compact #view-toggle { bottom:16px; }
+      body.autoplay-mobile-compact #autoplay-toast { bottom:76px; }
+    }
+    /* オートプレイ中の現在操作をひと言で示すキャプション（モバイル専用） */
+    #autoplay-caption {
+      display:none; position:absolute; left:50%; top:104px; transform:translateX(-50%);
+      z-index:140; max-width:calc(100vw - 32px);
+      background:rgba(27,45,38,0.88); color:#fff; border-radius:20px;
+      padding:7px 14px; font-size:11px; font-weight:600; white-space:nowrap;
+      overflow:hidden; text-overflow:ellipsis;
+      box-shadow:0 2px 10px rgba(0,0,0,0.2);
+    }
+    @media (max-width:600px) {
+      body.autoplay-mobile-compact #autoplay-caption { display:block; }
     }
     /* ── 空き家バンク トグル・凡例・ピン ── */
     #akiya-section { border-top:1px solid #f0f0f0; padding-top:10px; padding-bottom:24px; }
@@ -621,6 +680,16 @@
   <span class="autoplay-icon" id="autoplay-icon">&#x25B6;</span>
   <span id="autoplay-label">自動再生を開始</span>
 </button>
+
+<!-- MAP-FLOW-1 UX改善（v3）：自動再生中の操作内容キャプション（モバイル専用コンパクト表示） -->
+<div id="autoplay-caption"></div>
+
+<!-- MAP-FLOW-1 UX改善（v2）：開始・一時停止を知らせるトースト -->
+<div id="autoplay-toast">
+  <span class="at-msg" id="autoplay-toast-msg"></span>
+  <button class="at-resume" id="autoplay-toast-resume" onclick="resumeAutoplayFromToast()">&#x25B6; 続きを見る</button>
+  <button class="at-close" onclick="hideAutoplayToast()" title="閉じる" aria-label="閉じる">&times;</button>
+</div>
 
 <!-- Legend (デフォルト表示) -->
 <div id="pop-legend" class="visible">
@@ -2379,10 +2448,27 @@ function getBbox(feat) {
   return [[x0, y0], [x1, y1]];
 }
 
+// 2つのbbox（[[minLon,minLat],[maxLon,maxLat]]）を結合する
+function mergeBbox(a, b) {
+  return [
+    [Math.min(a[0][0], b[0][0]), Math.min(a[0][1], b[0][1])],
+    [Math.max(a[1][0], b[1][0]), Math.max(a[1][1], b[1][1])]
+  ];
+}
+
+// 中心点＋半径（m）からおおよそのbboxを作る（MAP-FLOW-1：800m円を画面内に収めるため）
+function bboxFromCenterRadius(lat, lon, radiusM) {
+  const dLat = radiusM / 111000; // 緯度1度 ≒ 111km
+  const dLon = dLat / Math.cos(lat * Math.PI / 180);
+  return [[lon - dLon, lat - dLat], [lon + dLon, lat + dLat]];
+}
+
 // 路面電車の徒歩圏リストから町丁目を選んだ時専用のハイライト。
 // selectTown()は検索結果向けに寄りすぎるズームをするため、
 // 徒歩圏の文脈では引いた表示になるよう別関数にしている。
-function highlightChomeGently(name) {
+// viewOpts.extendBbox / viewOpts.padding / viewOpts.maxZoom：
+// MAP-FLOW-1の自動再生時に、800m円全体が入るようズームアウトするための拡張引数（任意）。
+function highlightChomeGently(name, viewOpts) {
   selectedTown = name;
   if (layersReady) {
     map.setFilter('town-highlight-fill',   ['==', 'S_NAME', name]);
@@ -2405,8 +2491,13 @@ function highlightChomeGently(name) {
   if (townGeoJSON) {
     const feat = townGeoJSON.features.find(f => f.properties && f.properties.S_NAME === name);
     if (feat) {
-      const bb = getBbox(feat);
-      map.fitBounds(bb, { padding: 200, maxZoom: 15, duration: 800 });
+      let bb = getBbox(feat);
+      if (viewOpts && viewOpts.extendBbox) bb = mergeBbox(bb, viewOpts.extendBbox);
+      map.fitBounds(bb, {
+        padding: (viewOpts && viewOpts.padding) || 200,
+        maxZoom: (viewOpts && viewOpts.maxZoom) || 15,
+        duration: 800
+      });
     }
   }
 }
@@ -2857,11 +2948,13 @@ async function runAutoplayLoop(myToken) {
   while (autoplayActive && myToken === autoplayLoopToken) {
     // 1. オープニング
     resetToOpeningState();
+    setAutoplayCaption('ご案内をスタートします');
     await autoplaySleep(AUTOPLAY_STEP_MS.opening);
     if (myToken !== autoplayLoopToken) return;
 
     // 2. 航空写真（トグル切替）
     autoplaySet(() => setMapView('satellite'));
+    setAutoplayCaption('航空写真に切替中');
     await autoplaySleep(AUTOPLAY_STEP_MS.satellite);
     if (myToken !== autoplayLoopToken) return;
 
@@ -2871,6 +2964,7 @@ async function runAutoplayLoop(myToken) {
       onPopToggle(false);
       scrollPanelTo(document.getElementById('pop-checkbox'));
     });
+    setAutoplayCaption('人口増減の表示をOFF');
     await autoplaySleep(AUTOPLAY_STEP_MS.popOff);
     if (myToken !== autoplayLoopToken) return;
 
@@ -2880,6 +2974,7 @@ async function runAutoplayLoop(myToken) {
       onAkiyaToggle(true);
       scrollPanelTo(document.getElementById('akiya-checkbox'));
     });
+    setAutoplayCaption('空き家バンク登録物件を表示中');
     try { await waitForAkiyaReady(8000); } catch (e) { /* 読み込み失敗時はこの周は進める */ }
     await autoplaySleep(AUTOPLAY_STEP_MS.akiyaOn);
     if (myToken !== autoplayLoopToken) return;
@@ -2893,6 +2988,7 @@ async function runAutoplayLoop(myToken) {
         onTramStopChange();
         scrollPanelTo(document.getElementById('tram-walk-select'));
       });
+      setAutoplayCaption('電停「思案橋」を選択');
       await autoplaySleep(AUTOPLAY_STEP_MS.tramSelect);
       if (myToken !== autoplayLoopToken) return;
 
@@ -2902,6 +2998,7 @@ async function runAutoplayLoop(myToken) {
         onTramCircleToggle(true);
         scrollPanelTo(document.getElementById('tram-circle-checkbox'), 'nearest');
       });
+      setAutoplayCaption('電停から半径800mを表示中');
       await autoplaySleep(AUTOPLAY_STEP_MS.circleOn);
       if (myToken !== autoplayLoopToken) return;
 
@@ -2911,6 +3008,7 @@ async function runAutoplayLoop(myToken) {
         onTramElevToggle(true);
         scrollPanelTo(document.getElementById('tram-elev-checkbox'), 'nearest');
       });
+      setAutoplayCaption('標高差30m以内の徒歩圏を表示中');
       try { await waitForTramElevReady(shianbashiIdx, 20000); } catch (e) { /* 計算未完了でもこの周は進める */ }
       await autoplaySleep(AUTOPLAY_STEP_MS.afterElev);
       if (myToken !== autoplayLoopToken) return;
@@ -2918,7 +3016,10 @@ async function runAutoplayLoop(myToken) {
       // 7.5. 徒歩圏内リストの一番上に表示されている「栄町」をハイライト表示
       // （リストをスクロールしなくても対応関係が分かるように、先頭表示の町を選ぶ。
       //   リスト側の項目自体も一時的に太字＋オレンジ背景にして対応関係を強調する）
+      // MAP-FLOW-1 UX改善（v3）：800m円の内外が見えるよう、円のbboxを合わせてズームアウト
       const eichomeLinkEl = document.querySelector('.tram-chome-link[data-name="栄町"]');
+      const eichomeStop = tramStops[shianbashiIdx];
+      const eichomeCircleBbox = bboxFromCenterRadius(eichomeStop.lat, eichomeStop.lon, 800);
       autoplaySet(() => {
         map.setPaintProperty('town-highlight-fill', 'fill-color', '#FF6D00');
         map.setPaintProperty('town-highlight-fill', 'fill-opacity', 0.75);
@@ -2926,8 +3027,9 @@ async function runAutoplayLoop(myToken) {
           eichomeLinkEl.classList.add('autoplay-active-chome');
           scrollPanelTo(eichomeLinkEl, 'center');
         }
-        highlightChomeGently('栄町');
+        highlightChomeGently('栄町', { extendBbox: eichomeCircleBbox, padding: 60, maxZoom: 14 });
       });
+      setAutoplayCaption('「栄町」をハイライト表示中');
       await autoplaySleep(AUTOPLAY_STEP_MS.hamamachi);
       if (myToken !== autoplayLoopToken) return;
       autoplaySet(() => {
@@ -2942,6 +3044,7 @@ async function runAutoplayLoop(myToken) {
       autoplaySet(() => {
         map.flyTo({ center: [stop.lon, stop.lat], zoom: 14.3, duration: 800 });
       });
+      setAutoplayCaption('近くの登録物件をタップ表示中');
       await autoplaySleep(900);
       if (myToken !== autoplayLoopToken) return;
       const pin = findNearestAkiyaPin(stop.lat, stop.lon);
@@ -2955,13 +3058,59 @@ async function runAutoplayLoop(myToken) {
   }
 }
 
-function startAutoplay(isInitial) {
+// MAP-FLOW-1 UX改善（v2）：開始・一時停止をトーストで知らせる
+let autoplayToastTimer = null;
+
+function showAutoplayToast(message, opts) {
+  opts = opts || {};
+  const toast = document.getElementById('autoplay-toast');
+  const msgEl = document.getElementById('autoplay-toast-msg');
+  const resumeBtn = document.getElementById('autoplay-toast-resume');
+  if (!toast || !msgEl || !resumeBtn) return;
+  msgEl.textContent = message;
+  resumeBtn.style.display = opts.showResume ? 'inline-block' : 'none';
+  toast.classList.add('visible');
+  if (autoplayToastTimer) clearTimeout(autoplayToastTimer);
+  autoplayToastTimer = setTimeout(hideAutoplayToast, opts.duration || 5000);
+}
+
+function hideAutoplayToast() {
+  const toast = document.getElementById('autoplay-toast');
+  if (toast) toast.classList.remove('visible');
+  if (autoplayToastTimer) { clearTimeout(autoplayToastTimer); autoplayToastTimer = null; }
+}
+
+function resumeAutoplayFromToast() {
+  hideAutoplayToast();
+  startAutoplay('toast_resume');
+}
+
+// MAP-FLOW-1 UX改善（v3）：モバイルのみ、自動再生中はパネル・凡例を隠しキャプション表示に切替
+function setAutoplayMobileCompact(active) {
+  if (window.innerWidth > 600) return; // PCは対象外（従来通りパネル表示）
+  document.body.classList.toggle('autoplay-mobile-compact', active);
+  if (!active) setAutoplayCaption('');
+}
+
+function setAutoplayCaption(text) {
+  const el = document.getElementById('autoplay-caption');
+  if (el) el.textContent = text;
+}
+
+function startAutoplay(trigger) {
+  trigger = trigger || 'manual_button';
   if (autoplayActive) return;
   autoplayActive = true;
   autoplayStartedAt = Date.now();
   autoplayLoopToken++;
   updateAutoplayButton();
-  sendAutoplayEvent('start', { trigger: isInitial ? 'page_load' : 'manual_button' });
+  setAutoplayMobileCompact(true);
+  sendAutoplayEvent('start', { trigger: trigger });
+  if (trigger === 'page_load') {
+    showAutoplayToast('自動でご案内を再生中です（タップでいつでも一時停止できます）', { showResume:false, duration:4500 });
+  } else {
+    hideAutoplayToast();
+  }
   runAutoplayLoop(autoplayLoopToken);
 }
 
@@ -2971,14 +3120,19 @@ function stopAutoplay(reason) {
   autoplayActive = false;
   autoplayLoopToken++; // 実行中のループを安全に止める
   updateAutoplayButton();
+  setAutoplayMobileCompact(false);
   sendAutoplayEvent('stop', { stop_reason: reason, duration_sec: durationSec });
+  if (reason === 'user_interaction') {
+    showAutoplayToast('自動再生を一時停止しました', { showResume:true, duration:8000 });
+  }
 }
 
 function toggleAutoplayButton() {
   if (autoplayActive) {
     stopAutoplay('manual_button');
   } else {
-    startAutoplay(false);
+    hideAutoplayToast();
+    startAutoplay('manual_button');
   }
 }
 
@@ -3017,7 +3171,7 @@ document.querySelectorAll('#view-toggle button, .quick-btn, #toggle-btn, #pc-tog
 const autoplayPrefersReducedMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 if (!autoplayPrefersReducedMotion) {
-  setTimeout(() => startAutoplay(true), 1500);
+  setTimeout(() => startAutoplay('page_load'), 1500);
 } else {
   updateAutoplayButton();
 }
