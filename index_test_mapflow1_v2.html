@@ -1,0 +1,3121 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+
+  <!-- PWA -->
+  <link rel="manifest" href="manifest.json">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="長崎3Dマップ">
+  <link rel="apple-touch-icon" href="icon-192.png">
+  <meta name="theme-color" content="#1a6b3c">
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>長崎市 3Dエリアマップ | あいぜん不動産</title>
+  <link href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" rel="stylesheet">
+  <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@turf/turf@6/turf.min.js"></script>
+  <style>
+    :root {
+      /* MAP-FLOW-1 UX改善（v2）：スマホでパネルが地図を覆いすぎないよう55vh→46vhに縮小 */
+      --mp-panel-h: 46vh;
+    }
+    * { margin:0; padding:0; box-sizing:border-box; }
+    html, body { width:100%; height:100%; overflow:hidden; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
+    #loading {
+      position:fixed; inset:0; background:#f5f5f0;
+      display:flex; flex-direction:column; align-items:center; justify-content:center;
+      z-index:9999; gap:16px;
+    }
+    #loading p { color:#4A6741; font-size:15px; }
+    #loading small { color:#888; font-size:12px; }
+    .loader { width:40px; height:40px; border:3px solid #e0e0e0; border-top-color:#4A6741; border-radius:50%; animation:spin 0.8s linear infinite; }
+    @keyframes spin { to { transform:rotate(360deg); } }
+    #map { position:absolute; inset:0; }
+
+    /* Panel */
+    #panel {
+      position:absolute; top:12px; left:12px; z-index:100;
+      background:rgba(255,255,255,0.97); border-radius:12px;
+      box-shadow:0 4px 20px rgba(0,0,0,0.15);
+      width:282px; max-height:calc(100vh - 24px); overflow-y:auto;
+    }
+    #panel-header {
+      display:flex; align-items:center; justify-content:space-between;
+      padding:14px 16px 10px; border-bottom:1px solid #f0f0f0;
+      position:sticky; top:0; background:rgba(255,255,255,0.98);
+      z-index:10; border-radius:12px 12px 0 0;
+    }
+    #panel-header h1 { font-size:14px; font-weight:700; color:#333; }
+    #panel-header .sub { font-size:10px; color:#999; margin-left:6px; }
+    #panel-close { background:none; border:none; cursor:pointer; color:#999; font-size:20px; line-height:1; display:flex; align-items:center; justify-content:center; }
+    #panel-body { padding:12px; display:flex; flex-direction:column; gap:10px; }
+    /* スクロール可能であることを示すフェード */
+    #panel-body::after {
+      content:''; display:block; position:sticky; bottom:0;
+      height:28px; margin:-28px -12px 0;
+      background:linear-gradient(to bottom, rgba(255,255,255,0), rgba(255,255,255,0.95));
+      pointer-events:none; flex-shrink:0;
+    }
+
+    /* Area info */
+    #area-info { background:#f0f5ef; border-radius:8px; padding:10px 12px; display:none; }
+    #area-info.active { display:block; }
+    #area-name { font-size:14px; font-weight:700; color:#4A6741; margin-bottom:3px; }
+    #area-sub { font-size:11px; color:#666; }
+    #area-pop { font-size:11px; color:#444; margin-top:4px; }
+    #area-clear {
+      margin-top:8px; padding:5px 10px; font-size:11px; color:#888;
+      background:white; border:1px solid #ddd; border-radius:6px;
+      cursor:pointer; transition:all 0.15s; width:100%;
+    }
+    #area-clear:hover { border-color:#4A6741; color:#4A6741; background:#f5f9f4; }
+
+    /* Section label */
+    .section-label { font-size:11px; color:#999; font-weight:600; letter-spacing:0.5px; }
+
+    /* Search */
+    #search-input {
+      width:100%; padding:9px 12px; border:1px solid #ddd; border-radius:8px;
+      font-size:13px; outline:none; background:#fafafa;
+    }
+    #search-input:focus { border-color:#4A6741; background:white; }
+    #search-results { background:white; border:1px solid #e0e0e0; border-radius:8px; max-height:180px; overflow-y:auto; display:none; }
+    .result-item { padding:8px 12px; font-size:13px; cursor:pointer; color:#333; border-bottom:1px solid #f0f0f0; }
+    .result-item:last-child { border-bottom:none; }
+    .result-item:hover { background:#f0f5ef; color:#4A6741; }
+    #result-count { font-size:11px; color:#999; padding:4px 12px 2px; }
+
+    /* Quick buttons */
+    #quick-btns { display:flex; flex-wrap:wrap; gap:6px; }
+    .quick-btn {
+      background:#f5f5f0; border:1px solid #e0e0e0; border-radius:20px;
+      padding:5px 12px; font-size:12px; color:#555; cursor:pointer; transition:all 0.15s; white-space:nowrap;
+    }
+    .quick-btn:hover, .quick-btn.active { background:#4A6741; color:white; border-color:#4A6741; }
+
+    /* Population toggle */
+    #pop-section { border-top:1px solid #f0f0f0; padding-top:10px; }
+    #yoto-section { border-top:1px solid #f0f0f0; padding-top:10px; }
+    #pop-toggle-row, .toggle-row { display:flex; align-items:center; justify-content:space-between; }
+    #pop-toggle-label, .toggle-label { font-size:12px; color:#444; font-weight:600; }
+    #pop-toggle, .toggle-switch { position:relative; width:44px; height:24px; cursor:pointer; display:inline-block; }
+    #pop-toggle input, .toggle-switch input { opacity:0; width:0; height:0; position:absolute; }
+    #pop-note, .toggle-note { font-size:10px; color:#C62828; margin-top:3px; }
+    .toggle-track { position:absolute; top:0; left:0; right:0; bottom:0; background:#ddd; border-radius:12px; transition:background 0.2s; pointer-events:none; }
+    .toggle-thumb { position:absolute; top:3px; left:3px; width:18px; height:18px; background:white; border-radius:50%; box-shadow:0 1px 3px rgba(0,0,0,0.3); transition:transform 0.2s; pointer-events:none; }
+    #pop-checkbox:checked + .toggle-track,
+    #yoto-checkbox:checked + .toggle-track,
+    #akiya-checkbox:checked + .toggle-track,
+    #tram-circle-checkbox:checked + .toggle-track,
+    #tram-elev-checkbox:checked + .toggle-track { background:#1B6E6C; }
+    #pop-checkbox:checked ~ .toggle-thumb,
+    #yoto-checkbox:checked ~ .toggle-thumb,
+    #akiya-checkbox:checked ~ .toggle-thumb,
+    #tram-circle-checkbox:checked ~ .toggle-thumb,
+    #tram-elev-checkbox:checked ~ .toggle-thumb { transform:translateX(20px); }
+    #pop-note { font-size:10px; color:#999; margin-top:4px; }
+
+    /* Tram walk-distance section */
+    #tram-walk-section { border-top:1px solid #f0f0f0; padding-top:10px; }
+    #tram-walk-select {
+      width:100%; padding:6px; border:1px solid #ccc; border-radius:6px;
+      font-size:12px; margin-bottom:8px; color:#333; background:#fff;
+    }
+    #tram-walk-section .toggle-row { margin-bottom:6px; }
+    #tram-walk-section .toggle-row:last-of-type { margin-bottom:0; }
+    #tram-elev-status { font-size:10px; color:#666; margin-top:4px; min-height:12px; }
+    #tram-elev-status.error { color:#C62828; }
+
+    /* Legend */
+    #pop-legend {
+      position:absolute; bottom:12px; left:12px; z-index:100;
+      background:rgba(255,255,255,0.97); border-radius:10px;
+      box-shadow:0 2px 12px rgba(0,0,0,0.15);
+      padding:12px 14px; display:none; min-width:185px;
+      max-height:calc(100vh - 80px); overflow-y:auto;
+    }
+    #pop-legend.visible { display:block; }
+    #pop-legend h3 { font-size:11px; font-weight:700; color:#333; margin:0; }
+    .legend-row { display:flex; align-items:center; gap:8px; margin-bottom:4px; }
+    .legend-swatch { width:14px; height:14px; border-radius:3px; flex-shrink:0; border:1px solid rgba(0,0,0,0.1); }
+    .legend-label { font-size:11px; color:#555; }
+    .legend-divider { border:none; border-top:1px solid #eee; margin:5px 0; }
+    #legend-source { font-size:9px; color:#aaa; margin-top:6px; }
+    /* ── 用途地域凡例 ── */
+    #yoto-legend {
+      display:none;
+      position:absolute;
+      bottom:100px;
+      right:12px;
+      background:rgba(255,255,255,0.95);
+      border-radius:8px;
+      padding:10px 12px;
+      box-shadow:0 2px 8px rgba(0,0,0,0.18);
+      z-index:100;
+      max-height:calc(100vh - 160px);
+      overflow-y:auto;
+      min-width:190px;
+    }
+    #yoto-legend.visible { display:block; }
+    #yoto-legend h3 { font-size:11px; font-weight:700; color:#333; margin:0 0 6px 0; }
+    #yoto-legend .legend-note { font-size:9px; color:#aaa; margin-top:6px; }
+
+
+    /* Guide */
+    #guide {
+      position:absolute; bottom:12px; right:12px; z-index:100;
+      background:rgba(255,255,255,0.97); border-radius:10px;
+      box-shadow:0 2px 10px rgba(0,0,0,0.12); padding:10px 14px; max-width:240px;
+    }
+    #guide-header { display:flex; align-items:center; justify-content:space-between; margin-bottom:6px; }
+    #guide-header strong { font-size:12px; color:#333; }
+    #guide-close { background:none; border:none; cursor:pointer; color:#999; font-size:16px; }
+    #guide-body { font-size:11px; color:#555; line-height:1.7; }
+    .device { font-weight:600; color:#4A6741; }
+    #guide-toggle {
+      position:absolute; bottom:12px; right:12px; z-index:100;
+      background:rgba(255,255,255,0.95); border:1px solid #ddd;
+      border-radius:8px; padding:6px 10px; font-size:11px; color:#666;
+      cursor:pointer; display:none; box-shadow:0 2px 8px rgba(0,0,0,0.1);
+    }
+    #aizen-link {
+      position:absolute; bottom:54px; right:12px; z-index:100;
+      background:#4A6741; border:none; border-radius:8px;
+      padding:7px 12px; font-size:11px; color:#fff; font-weight:700;
+      cursor:pointer; box-shadow:0 2px 8px rgba(0,0,0,0.18);
+      text-decoration:none; display:none; align-items:center; gap:5px;
+      line-height:1.3; white-space:nowrap;
+    }
+    #aizen-link:hover { background:#3a5334; }
+    @media (display-mode: standalone) {
+      #aizen-link { display:flex; }
+    }
+
+    /* MAP-FLOW-1：自動再生（源泉かけ流し）ボタン */
+    #autoplay-btn {
+      position:absolute; top:12px; left:50%; transform:translateX(-50%); z-index:150;
+      background:rgba(255,255,255,0.97); border:none; border-radius:20px;
+      padding:8px 16px; font-size:12px; font-weight:700; color:#1B6E6C;
+      cursor:pointer; box-shadow:0 2px 10px rgba(0,0,0,0.18);
+      display:flex; align-items:center; gap:6px; white-space:nowrap;
+      transition:background 0.2s, color 0.2s;
+    }
+    #autoplay-btn:hover { background:#fff; }
+    #autoplay-btn.playing { color:#fff; background:#1B6E6C; }
+    #autoplay-btn .autoplay-icon { font-size:13px; }
+    .autoplay-active-chome {
+      font-weight:900 !important; background:#FFE0B2; padding:1px 5px;
+      border-radius:4px; color:#B75B00 !important; text-decoration:none !important;
+    }
+    @media(max-width:600px) {
+      #autoplay-btn { padding:6px 10px; font-size:10px; max-width:78vw; }
+      #autoplay-btn #autoplay-label { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+    }
+    @media(max-width:380px) {
+      #autoplay-btn #autoplay-label { font-size:9px; max-width:34vw; }
+    }
+
+    /* MAP-FLOW-1 UX改善（v2）：自動再生の開始・一時停止を知らせるトースト */
+    #autoplay-toast {
+      position:absolute; left:50%; bottom:16px; transform:translateX(-50%) translateY(12px);
+      z-index:300; max-width:calc(100vw - 32px);
+      background:rgba(27,45,38,0.94); color:#fff; border-radius:12px;
+      padding:11px 14px; box-shadow:0 6px 20px rgba(0,0,0,0.28);
+      display:flex; align-items:center; gap:10px;
+      font-size:12px; line-height:1.5;
+      opacity:0; pointer-events:none;
+      transition:opacity 0.25s ease, transform 0.25s ease;
+    }
+    #autoplay-toast.visible { opacity:1; transform:translateX(-50%) translateY(0); pointer-events:auto; }
+    #autoplay-toast .at-msg { flex:1; }
+    #autoplay-toast .at-resume {
+      flex-shrink:0; background:#fff; color:#1B6E6C; border:none; border-radius:8px;
+      padding:7px 12px; font-size:12px; font-weight:700; cursor:pointer; white-space:nowrap;
+    }
+    #autoplay-toast .at-resume:hover { background:#eafaf5; }
+    #autoplay-toast .at-close {
+      flex-shrink:0; background:none; border:none; color:rgba(255,255,255,0.7);
+      font-size:16px; line-height:1; cursor:pointer; padding:0 2px;
+    }
+    @media(max-width:600px) {
+      /* view-toggle（地図/航空写真ボタン）の上に重ならない位置に配置 */
+      #autoplay-toast { bottom:calc(var(--mp-panel-h) + 60px); font-size:11px; padding:10px 12px; }
+    }
+
+    /* Popup */
+    .maplibregl-popup-content { border-radius:10px; padding:0; box-shadow:0 4px 16px rgba(0,0,0,0.15); min-width:180px; }
+    /* ×ボタンを全ポップアップ共通で大きく・押しやすく */
+    .maplibregl-popup-close-button {
+      font-size:22px !important;
+      width:36px !important;
+      height:36px !important;
+      line-height:36px !important;
+      text-align:center !important;
+      top:2px !important;
+      right:2px !important;
+      color:#555 !important;
+      padding:0 !important;
+    }
+    .maplibregl-popup-close-button:hover { color:#000 !important; background:rgba(0,0,0,0.06) !important; border-radius:6px !important; }
+    .popup-inner { padding:12px 14px; }
+    .popup-town { font-size:14px; font-weight:700; color:#333; margin-bottom:8px; border-bottom:1px solid #f0f0f0; padding-bottom:6px; }
+    .popup-row { display:flex; justify-content:space-between; font-size:12px; color:#555; margin-bottom:3px; }
+    .popup-row span:last-child { font-weight:600; color:#333; }
+    .popup-change { margin-top:6px; padding:5px 8px; border-radius:6px; font-size:12px; font-weight:700; text-align:center; }
+    .popup-change.increase { background:#FFECEC; color:#B71C1C; }
+    .popup-change.decrease { background:#E3F2FD; color:#1565C0; }
+    .popup-change.stable { background:#F5F5F5; color:#757575; }
+
+    /* マップビュー切替ボタン */
+    #view-toggle {
+      position:absolute; bottom:54px; right:12px; z-index:100;
+      background:rgba(255,255,255,0.97); border:none; border-radius:10px;
+      box-shadow:0 2px 10px rgba(0,0,0,0.15); overflow:hidden;
+      display:flex; cursor:pointer;
+    }
+    .view-btn {
+      padding:8px 14px; font-size:12px; font-weight:600; color:#888;
+      background:none; border:none; cursor:pointer; transition:all 0.2s;
+      white-space:nowrap;
+    }
+    .view-btn.active { background:#4A6741; color:white; }
+    .view-btn:first-child { border-right:1px solid #e0e0e0; }
+    @media(max-width:600px){
+      #view-toggle { bottom:calc(var(--mp-panel-h) + 16px); left:12px; right:auto; }
+    }
+    @media(min-width:601px){
+      #view-toggle { bottom:12px; left:12px; right:auto; }
+    }
+    #panel { transition:transform 0.3s ease; }
+    #panel.collapsed { transform:translateX(calc(-100% - 20px)); }
+    #pc-toggle {
+      display:none; position:absolute; top:12px; left:12px; z-index:200;
+      background:rgba(255,255,255,0.95); border:none; border-radius:10px; padding:10px 14px;
+      box-shadow:0 2px 12px rgba(0,0,0,0.25); cursor:pointer;
+      align-items:center; gap:8px;
+      font-size:12px; font-weight:600; color:#4A6741;
+    }
+    /* Mobile */
+    #toggle-btn {
+      display:none; position:absolute; top:12px; left:12px; z-index:200;
+      background:rgba(255,255,255,0.95); border:none; border-radius:10px; padding:10px 14px;
+      box-shadow:0 2px 12px rgba(0,0,0,0.25); cursor:pointer;
+      align-items:center; gap:8px;
+      font-size:12px; font-weight:600; color:#4A6741;
+    }
+    .maplibregl-ctrl-top-right { top:12px; right:12px; }
+    .maplibregl-ctrl-group { border-radius:8px; overflow:hidden; }
+    @media (max-width:600px) {
+      #panel {
+        width:calc(100vw - 24px); max-height:var(--mp-panel-h);
+        top:auto; bottom:0; left:0; right:0; margin:0 12px 12px;
+        border-radius:14px 14px 10px 10px;
+      }
+      /* スマホ: collapsed は下にスライド */
+      #panel.collapsed { transform:translateY(calc(100% + 16px)); }
+      #panel-close { display:block !important; }
+      #toggle-btn { display:flex; align-items:center; justify-content:center; }
+      #pc-toggle { display:none !important; }
+      #guide { display:none; }
+      #guide-toggle { bottom:52px; right:16px; }
+      #aizen-link { bottom:96px; right:16px; }
+      #pop-legend { bottom:16px; left:12px; }
+      #yoto-legend { bottom:16px; left:12px; right:auto; max-height:50vh; }
+    }
+    /* ── 空き家バンク トグル・凡例・ピン ── */
+    #akiya-section { border-top:1px solid #f0f0f0; padding-top:10px; padding-bottom:24px; }
+
+    /* 面塗り凡例（左下） */
+    #akiya-legend {
+      display:none;
+      position:absolute; bottom:12px; left:12px; z-index:100;
+      background:rgba(255,255,255,0.97); border-radius:10px;
+      box-shadow:0 2px 12px rgba(0,0,0,0.15);
+      padding:12px 14px; min-width:200px;
+      max-height:calc(100vh - 80px); overflow-y:auto;
+    }
+    #akiya-legend.visible { display:block; }
+    #akiya-legend h3 { font-size:11px; font-weight:700; color:#333; margin:0; }
+    #akiya-legend .legend-note { font-size:9px; color:#aaa; margin-top:6px; }
+
+    /* ピン凡例（右下、用途地域凡例と同位置パターン） */
+    #akiya-pin-legend {
+      display:none;
+      position:absolute; bottom:100px; right:12px; z-index:100;
+      background:rgba(255,255,255,0.95); border-radius:8px;
+      padding:10px 12px; box-shadow:0 2px 8px rgba(0,0,0,0.18);
+      z-index:100; min-width:190px;
+    }
+    #akiya-pin-legend.visible { display:block; }
+    #akiya-pin-legend h3 { font-size:11px; font-weight:700; color:#333; margin:0 0 6px 0; }
+    #akiya-pin-legend .legend-note { font-size:11px; color:#c0392b; font-weight:600; margin-top:6px; line-height:1.5; }
+    .akiya-pin-row { display:flex; align-items:center; gap:8px; margin-bottom:4px; }
+    .akiya-pin-sample {
+      width:18px; height:18px; border-radius:50%;
+      display:flex; align-items:center; justify-content:center;
+      color:#fff; font-size:9px; font-weight:700;
+      border:2px solid rgba(255,255,255,0.9); box-shadow:0 1px 3px rgba(0,0,0,0.25);
+      flex-shrink:0;
+    }
+
+    /* ピンDOM要素 */
+    .akiya-marker {
+      position:relative;
+      width:26px; height:26px; border-radius:50%;
+      display:flex; align-items:center; justify-content:center;
+      color:#fff; font-size:11px; font-weight:700;
+      border:2px solid rgba(255,255,255,0.9);
+      box-shadow:0 2px 6px rgba(0,0,0,0.3);
+      cursor:pointer;
+    }
+    .akiya-marker.kubun-building { background:#1a6b3c; }
+    .akiya-marker.kubun-land     { background:#C2841C; }
+
+    /* 同一地点に複数物件がある場合の件数バッジ */
+    .akiya-marker-count {
+      position:absolute; top:-6px; right:-6px;
+      min-width:16px; height:16px; padding:0 3px;
+      background:#c0392b; color:#fff; font-size:9px; font-weight:700;
+      border-radius:8px; display:flex; align-items:center; justify-content:center;
+      border:1.5px solid #fff; box-shadow:0 1px 2px rgba(0,0,0,0.3);
+    }
+
+    /* ピンのポップアップ */
+    .akiya-popup .popup-inner { padding:12px 14px; }
+    .akiya-popup .popup-group-title { font-size:11px; font-weight:700; color:#1B6E6C; margin-bottom:8px; }
+    .akiya-popup .popup-item + .popup-divider { margin:10px 0; }
+    .akiya-popup .popup-divider { border:none; border-top:1px dashed #ddd; margin:10px 0; }
+    .akiya-popup .popup-title { font-size:13px; font-weight:700; color:#333; margin-bottom:6px; }
+    .akiya-popup .popup-row { display:flex; justify-content:space-between; font-size:12px; color:#555; margin-bottom:3px; }
+    .akiya-popup .popup-row span:last-child { font-weight:600; color:#333; }
+    .akiya-popup .popup-badge {
+      display:inline-block; font-size:10px; font-weight:700; color:#fff;
+      border-radius:4px; padding:1px 6px; margin-right:4px;
+    }
+    .akiya-popup .badge-building { background:#1a6b3c; }
+    .akiya-popup .badge-land     { background:#C2841C; }
+    .akiya-popup .popup-link {
+      display:block; margin-top:8px; text-align:center;
+      font-size:11px; font-weight:600; color:#1B6E6C;
+      border:1px solid #1B6E6C; border-radius:6px; padding:5px 0;
+      text-decoration:none;
+    }
+    .akiya-popup .popup-link:hover { background:#1B6E6C; color:#fff; }
+    .akiya-popup .popup-note { font-size:11px; color:#c0392b; font-weight:600; margin-top:8px; line-height:1.5; }
+
+    @media (max-width:600px) {
+      #akiya-legend { bottom:16px; left:12px; }
+      #akiya-pin-legend { bottom:16px; left:12px; right:auto; max-height:50vh; }
+    }
+
+    /* ── 体験スポット（眺望360°・鳥の目動画）ピン ── */
+    .viewspot-marker {
+      width:30px; height:30px; border-radius:50%;
+      display:flex; align-items:center; justify-content:center;
+      color:#fff; font-size:15px;
+      border:2px solid rgba(255,255,255,0.95);
+      box-shadow:0 2px 6px rgba(0,0,0,0.35);
+      cursor:pointer;
+    }
+    .viewspot-marker.type-pano  { background:#1B6E6C; }
+    .viewspot-marker.type-video { background:#D85A30; }
+
+    .viewspot-popup .popup-inner { padding:0; }
+    .viewspot-popup .vs-thumb {
+      width:100%; height:120px; object-fit:cover;
+      border-radius:10px 10px 0 0; display:block;
+    }
+    .viewspot-popup .vs-body { padding:10px 12px; }
+    .viewspot-popup .vs-title { font-size:13px; font-weight:700; color:#333; }
+    .viewspot-popup .vs-subtitle { font-size:11px; color:#666; margin:2px 0 4px; }
+    .viewspot-popup .vs-shotdate { font-size:10px; color:#999; margin:0 0 8px; }
+    .viewspot-popup .vs-link {
+      display:block; text-align:center; background:#4A6741; color:#fff;
+      padding:8px; border-radius:6px; text-decoration:none; font-size:12px; font-weight:600;
+    }
+    .viewspot-popup .vs-link:hover { background:#3a5233; }
+    .maplibregl-popup.viewspot-popup .maplibregl-popup-content { padding:0; overflow:hidden; min-width:200px; }
+
+    @media (max-width:600px) {
+      .viewspot-popup .vs-thumb { height:70px; }
+      .viewspot-popup .vs-body { padding:8px 10px; }
+      .viewspot-popup .vs-title { font-size:12px; }
+      .viewspot-popup .vs-subtitle { font-size:10px; margin:1px 0 2px; }
+      .viewspot-popup .vs-shotdate { font-size:9px; margin:0 0 5px; }
+      .viewspot-popup .vs-link { padding:6px; font-size:11px; }
+      .maplibregl-popup.viewspot-popup .maplibregl-popup-content { max-width:180px; }
+    }
+
+    /* ── 電停マーカー（長崎電気軌道カラー）VS-2 ── */
+    .tram-stop-marker {
+      width:30px; height:22px; border-radius:6px;
+      background:#0F6E56;
+      display:flex; align-items:center; justify-content:center;
+      color:#fff; font-size:13px;
+      border:2px solid rgba(255,255,255,0.95);
+      box-shadow:0 2px 6px rgba(0,0,0,0.35);
+      cursor:pointer;
+    }
+    .tram-stop-marker.active { background:#0a5544; }
+
+    .tram-stop-popup .popup-inner { padding:10px 12px; }
+    .tram-stop-popup .ts-title { font-size:13px; font-weight:700; color:#333; margin-bottom:8px; }
+    .tram-stop-popup .ts-dest-list { display:flex; flex-direction:column; gap:6px; }
+    .tram-stop-popup .ts-dest-btn {
+      display:block; width:100%; text-align:left;
+      background:#f5f5f0; border:1px solid #e0e0e0; border-radius:8px;
+      padding:8px 10px; font-size:12px; color:#333; cursor:pointer;
+    }
+    .tram-stop-popup .ts-dest-btn:hover { background:#eef0ea; border-color:#0F6E56; }
+
+    /* 鳥の目ピン出現アニメーション */
+    @keyframes aerialPinDrop {
+      0%   { transform: scale(0.2) translateY(-16px); opacity: 0; }
+      60%  { transform: scale(1.15) translateY(0); opacity: 1; }
+      100% { transform: scale(1) translateY(0); opacity: 1; }
+    }
+    .viewspot-marker.aerial-pin-enter {
+      animation: aerialPinDrop 0.5s ease-out;
+    }
+  </style>
+</head>
+<body>
+
+<div id="loading">
+  <div class="loader"></div>
+  <p>長崎の3D地形を準備しています</p>
+  <small>MapLibre GL JS + 国土地理院 標高タイル</small>
+</div>
+
+<div id="map"></div>
+
+<button id="toggle-btn" onclick="togglePanel()" title="検索・メニューを開く">
+  <svg viewBox="0 0 24 24" fill="none" stroke="#4A6741" stroke-width="2.5" stroke-linecap="round" width="18" height="18">
+    <line x1="3" y1="6" x2="21" y2="6"/>
+    <line x1="3" y1="12" x2="21" y2="12"/>
+    <line x1="3" y1="18" x2="21" y2="18"/>
+  </svg>
+  <span>検索・メニュー</span>
+</button>
+
+<!-- PC用：パネル折りたたみ後に表示するボタン -->
+<button id="pc-toggle" onclick="togglePanel()" title="検索・メニューを開く">
+  <svg viewBox="0 0 24 24" fill="none" stroke="#4A6741" stroke-width="2.5" stroke-linecap="round" width="18" height="18">
+    <line x1="3" y1="6" x2="21" y2="6"/>
+    <line x1="3" y1="12" x2="21" y2="12"/>
+    <line x1="3" y1="18" x2="21" y2="18"/>
+  </svg>
+  <span>検索・メニュー</span>
+</button>
+
+<div id="panel">
+  <div id="panel-header">
+    <div>
+      <h1>長崎市 3Dエリアマップ</h1>
+      <span class="sub">地形から選ぶ移住先</span>
+    </div>
+    <button id="panel-close" onclick="togglePanel()">&#x00D7;</button>
+  </div>
+  <div id="panel-body">
+
+    <!-- Selected area info -->
+    <div id="area-info">
+      <div id="area-name">&#x2015;</div>
+      <div id="area-sub">3D地形上でハイライト表示中 &#x2014; ドラッグで視点変更可</div>
+      <div id="area-pop"></div>
+      <button id="area-clear" onclick="clearSelection()">&#x2715; 選択を解除する</button>
+    </div>
+
+    <!-- 【順序変更】検索を上 -->
+    <div class="section-label">町名検索</div>
+    <input type="text" id="search-input" placeholder="町名を入力 (例: 立山)" autocomplete="off" oninput="onSearchInput(this.value)">
+    <div id="search-results"><div id="result-count"></div></div>
+
+    <!-- 【ラベル変更】「エリアから探す」→「町名の例」 -->
+    <div class="section-label">町名の例（クリックで移動）</div>
+    <div id="quick-btns">
+      <button class="quick-btn" onclick="flyToArea('立山', this)">立山</button>
+      <button class="quick-btn" onclick="flyToArea('浜平', this)">浜平</button>
+      <button class="quick-btn" onclick="flyToArea('坂本', this)">坂本</button>
+      <button class="quick-btn" onclick="flyToArea('鳴滝', this)">鳴滝</button>
+      <button class="quick-btn" onclick="flyToArea('大浦', this)">大浦</button>
+      <button class="quick-btn" onclick="flyToArea('岩見町', this)">岩見町</button>
+      <button class="quick-btn" onclick="flyToArea('戸町', this)">戸町</button>
+      <button class="quick-btn" onclick="flyToArea('福田', this)">福田</button>
+      <button class="quick-btn" onclick="resetView()">全体を表示</button>
+    </div>
+
+    <!-- Population toggle -->
+    <div id="pop-section">
+      <div class="toggle-row">
+        <span class="toggle-label">人口増減を表示</span>
+        <label class="toggle-switch">
+          <input type="checkbox" id="pop-checkbox" checked onchange="onPopToggle(this.checked)">
+          <span class="toggle-track"></span>
+          <span class="toggle-thumb"></span>
+        </label>
+      </div>
+      <div class="toggle-note">2022年&#x2192;2025年の変化率（長崎市オープンデータ BODIK）</div>
+    </div>
+
+    <!-- Yoto chiiki toggle -->
+    <div id="yoto-section">
+      <div class="toggle-row">
+        <span class="toggle-label">用途地域を表示</span>
+        <label class="toggle-switch">
+          <input type="checkbox" id="yoto-checkbox" onchange="onYotoToggle(this.checked)">
+          <span class="toggle-track"></span>
+          <span class="toggle-thumb"></span>
+        </label>
+      </div>
+      <div class="toggle-note">2024年時点のデータ（国土数値情報）</div>
+    </div>
+
+    <!-- Akiya bank toggle（用途地域トグルの直後に追加） -->
+    <div id="akiya-section">
+      <div class="toggle-row">
+        <span class="toggle-label">空き家バンクを表示</span>
+        <label class="toggle-switch">
+          <input type="checkbox" id="akiya-checkbox" onchange="onAkiyaToggle(this.checked)">
+          <span class="toggle-track"></span>
+          <span class="toggle-thumb"></span>
+        </label>
+      </div>
+      <div class="toggle-note">面塗り：空き家発生率10%以上の町（空家等対策計画 R8.3）</div>
+      <div class="toggle-note">ピン：空き家バンク登録物件（市公開情報）</div>
+    </div>
+
+    <!-- Tram walk-distance section -->
+    <div id="tram-walk-section">
+      <div class="toggle-label" style="margin-bottom:8px;">路面電車の徒歩圏</div>
+      <select id="tram-walk-select" onchange="onTramStopChange()">
+        <option value="">電停を選択...</option>
+      </select>
+      <div class="toggle-row">
+        <span class="toggle-label">半径800mを表示</span>
+        <label class="toggle-switch">
+          <input type="checkbox" id="tram-circle-checkbox" disabled onchange="onTramCircleToggle(this.checked)">
+          <span class="toggle-track"></span>
+          <span class="toggle-thumb"></span>
+        </label>
+      </div>
+      <div class="toggle-row">
+        <span class="toggle-label">標高差30m以内の徒歩圏を表示</span>
+        <label class="toggle-switch">
+          <input type="checkbox" id="tram-elev-checkbox" disabled onchange="onTramElevToggle(this.checked)">
+          <span class="toggle-track"></span>
+          <span class="toggle-thumb"></span>
+        </label>
+      </div>
+      <div id="tram-elev-status"></div>
+      <div id="tram-legend" style="display:none; font-size:10px; color:#555; margin-top:6px; line-height:1.6;">
+        <div><span style="display:inline-block;width:10px;height:10px;border:2px dashed #ff6d00;border-radius:50%;margin-right:4px;vertical-align:middle;"></span>破線の円：電停から半径800m</div>
+        <div><span style="display:inline-block;width:10px;height:10px;background:#1565C0;opacity:0.7;border-radius:2px;margin-right:4px;vertical-align:middle;"></span>青塗り：標高差30m以内の徒歩圏</div>
+      </div>
+      <div id="tram-chome-list" style="display:none; margin-top:8px; max-height:220px; overflow-y:auto; font-size:11px; padding-top:6px; border-top:1px solid #f0f0f0;"></div>
+    </div>
+
+    <!-- Price / walk-distance filter section -->
+    <div id="akiya-filter-section" style="border-top:1px solid #f0f0f0; padding-top:10px;">
+      <div class="toggle-label" style="margin-bottom:8px;">価格・徒歩圏で絞り込む</div>
+      <div style="display:flex; align-items:center; gap:6px; margin-bottom:6px;">
+        <span style="font-size:11px; color:#555; width:76px; flex-shrink:0;">売買 上限</span>
+        <input type="number" id="filter-sale-max" placeholder="未指定" min="0" style="flex:1; padding:5px; border:1px solid #ccc; border-radius:4px; font-size:12px; width:0;">
+        <span style="font-size:11px; color:#555;">万円</span>
+      </div>
+      <div style="display:flex; align-items:center; gap:6px; margin-bottom:8px;">
+        <span style="font-size:11px; color:#555; width:76px; flex-shrink:0;">賃貸 上限</span>
+        <input type="number" id="filter-rent-max" placeholder="未指定" min="0" style="flex:1; padding:5px; border:1px solid #ccc; border-radius:4px; font-size:12px; width:0;">
+        <span style="font-size:11px; color:#555;">円/月</span>
+      </div>
+      <div style="font-size:10px; color:#888; margin-bottom:8px;">※電停・徒歩圏を選んでいる場合は、その範囲内の物件だけに絞り込みます（未選択なら価格だけで判定）</div>
+      <div style="display:flex; gap:8px;">
+        <button onclick="applyAkiyaFilter()" style="flex:1; background:#1B6E6C; color:#fff; border:none; border-radius:6px; padding:8px; font-size:12px; font-weight:600; cursor:pointer;">絞り込む</button>
+        <button onclick="resetAkiyaFilter()" style="background:#eee; color:#555; border:none; border-radius:6px; padding:8px 12px; font-size:12px; cursor:pointer;">リセット</button>
+      </div>
+      <div id="akiya-filter-status" style="font-size:11px; color:#555; margin-top:6px;"></div>
+    </div>
+
+  </div>
+</div>
+
+<!-- マップビュー切替 -->
+<div id="view-toggle">
+  <button class="view-btn active" id="btn-standard" onclick="setMapView('standard')">地図</button>
+  <button class="view-btn" id="btn-satellite" onclick="setMapView('satellite')">航空写真</button>
+</div>
+
+<!-- MAP-FLOW-1：自動再生（源泉かけ流し）ボタン -->
+<button id="autoplay-btn" onclick="toggleAutoplayButton()" title="自動再生の再生・停止">
+  <span class="autoplay-icon" id="autoplay-icon">&#x25B6;</span>
+  <span id="autoplay-label">自動再生を開始</span>
+</button>
+
+<!-- MAP-FLOW-1 UX改善（v2）：開始・一時停止を知らせるトースト -->
+<div id="autoplay-toast">
+  <span class="at-msg" id="autoplay-toast-msg"></span>
+  <button class="at-resume" id="autoplay-toast-resume" onclick="resumeAutoplayFromToast()">&#x25B6; 続きを見る</button>
+  <button class="at-close" onclick="hideAutoplayToast()" title="閉じる" aria-label="閉じる">&times;</button>
+</div>
+
+<!-- Legend (デフォルト表示) -->
+<div id="pop-legend" class="visible">
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+    <h3 style="margin:0;">人口増減率（2022&#x2192;2025年）</h3>
+    <button onclick="closeLegend()" style="background:none;border:none;cursor:pointer;color:#999;font-size:16px;line-height:1;padding:0 0 0 8px;" title="閉じる">&#x00D7;</button>
+  </div>
+  <div class="legend-row"><div class="legend-swatch" style="background:#B71C1C"></div><span class="legend-label">+5%以上（大幅増加）</span></div>
+  <div class="legend-row"><div class="legend-swatch" style="background:#EF5350"></div><span class="legend-label">+2&#x301C;+5%（増加）</span></div>
+  <div class="legend-row"><div class="legend-swatch" style="background:#FFCDD2"></div><span class="legend-label">0&#x301C;+2%（微増）</span></div>
+  <hr class="legend-divider">
+  <div class="legend-row"><div class="legend-swatch" style="background:#BBDEFB"></div><span class="legend-label">-2&#x301C;0%（微減）</span></div>
+  <div class="legend-row"><div class="legend-swatch" style="background:#1976D2"></div><span class="legend-label">-5&#x301C;-2%（減少）</span></div>
+  <div class="legend-row"><div class="legend-swatch" style="background:#1565C0"></div><span class="legend-label">-5%以下（大幅減少）</span></div>
+  <hr class="legend-divider">
+  <div class="legend-row"><div class="legend-swatch" style="background:#BDBDBD"></div><span class="legend-label">データなし</span></div>
+  <div id="legend-source">出典: 長崎市オープンデータ（BODIK）</div>
+</div>
+
+
+<!-- 用途地域 Legend -->
+<div id="yoto-legend">
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+    <h3 style="margin:0;">用途地域</h3>
+    <button onclick="closeYotoLegend()" style="background:none;border:none;cursor:pointer;color:#999;font-size:16px;line-height:1;padding:0 0 0 8px;" title="閉じる">&#x00D7;</button>
+  </div>
+  <div style="font-size:10px;color:#888;margin-bottom:6px;font-weight:bold;">住居系</div>
+  <div class="legend-row"><div class="legend-swatch" style="background:#5BAD5B"></div><span class="legend-label">第一種低層住居専用</span></div>
+  <div class="legend-row"><div class="legend-swatch" style="background:#8BC87F"></div><span class="legend-label">第二種低層住居専用</span></div>
+  <div class="legend-row"><div class="legend-swatch" style="background:#C5E8A0"></div><span class="legend-label">第一種中高層住居専用</span></div>
+  <div class="legend-row"><div class="legend-swatch" style="background:#DDEEBB"></div><span class="legend-label">第二種中高層住居専用</span></div>
+  <div class="legend-row"><div class="legend-swatch" style="background:#F5F5C0"></div><span class="legend-label">第一種住居</span></div>
+  <div class="legend-row"><div class="legend-swatch" style="background:#EDE888"></div><span class="legend-label">第二種住居</span></div>
+  <div class="legend-row"><div class="legend-swatch" style="background:#E8C870"></div><span class="legend-label">準住居</span></div>
+  <div style="font-size:10px;color:#888;margin:6px 0 6px 0;font-weight:bold;">商業系</div>
+  <div class="legend-row"><div class="legend-swatch" style="background:#C8A070"></div><span class="legend-label">近隣商業</span></div>
+  <div class="legend-row"><div class="legend-swatch" style="background:#E89858"></div><span class="legend-label">商業</span></div>
+  <div style="font-size:10px;color:#888;margin:6px 0 6px 0;font-weight:bold;">工業系</div>
+  <div class="legend-row"><div class="legend-swatch" style="background:#C0C8E8"></div><span class="legend-label">準工業</span></div>
+  <div class="legend-row"><div class="legend-swatch" style="background:#9898D0"></div><span class="legend-label">工業</span></div>
+  <div class="legend-row"><div class="legend-swatch" style="background:#7878B8"></div><span class="legend-label">工業専用</span></div>
+  <div class="legend-note">2024年時点のデータ（国土数値情報）</div>
+</div>
+
+
+<!-- 空き家発生率 面塗り Legend -->
+<div id="akiya-legend">
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+    <h3 style="margin:0;">空き家発生率（町丁目）</h3>
+    <button onclick="closeAkiyaLegend()" style="background:none;border:none;cursor:pointer;color:#999;font-size:16px;line-height:1;padding:0 0 0 8px;" title="閉じる">&#x00D7;</button>
+  </div>
+  <div class="legend-row"><div class="legend-swatch" style="background:#FFCDD2"></div><span class="legend-label">10&#x301C;15%</span></div>
+  <div class="legend-row"><div class="legend-swatch" style="background:#C62828"></div><span class="legend-label">15%以上</span></div>
+  <div class="legend-note">出典: 長崎市空家等対策計画（R8.3）P14-15</div>
+</div>
+
+<!-- バンク登録物件 ピン Legend -->
+<div id="akiya-pin-legend">
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+    <h3 style="margin:0;">空き家バンク登録物件</h3>
+    <button onclick="closeAkiyaPinLegend()" style="background:none;border:none;cursor:pointer;color:#999;font-size:16px;line-height:1;padding:0 0 0 8px;" title="閉じる">&#x00D7;</button>
+  </div>
+  <div style="font-size:10px;color:#888;margin-bottom:6px;font-weight:bold;">色＝種類</div>
+  <div class="akiya-pin-row"><div class="akiya-pin-sample" style="background:#1a6b3c;">　</div><span class="legend-label">空き家（建物あり）</span></div>
+  <div class="akiya-pin-row"><div class="akiya-pin-sample" style="background:#C2841C;">　</div><span class="legend-label">空き地（土地のみ）</span></div>
+  <div style="font-size:10px;color:#888;margin:8px 0 6px 0;font-weight:bold;">文字＝取引</div>
+  <div class="akiya-pin-row"><div class="akiya-pin-sample" style="background:#888;">売</div><span class="legend-label">売買希望</span></div>
+  <div class="akiya-pin-row"><div class="akiya-pin-sample" style="background:#888;">賃</div><span class="legend-label">賃貸希望</span></div>
+  <div class="akiya-pin-row"><div class="akiya-pin-sample" style="background:#888;">両</div><span class="legend-label">売買・賃貸どちらも可</span></div>
+  <div class="legend-note">2026年6月12日時点のデータ<br>出典: 長崎市空き家空き地バンク（公開情報・町丁目単位）<br>クリックで市公式ページへ（番地等は非公開）</div>
+</div>
+
+<!-- Guide -->
+<div id="guide">
+  <div id="guide-header">
+    <strong>操作ガイド</strong>
+    <button id="guide-close" onclick="collapseGuide()">&#x00D7;</button>
+  </div>
+  <div id="guide-body">
+    <p><span class="device">PC</span><br>
+    左ドラッグ: 移動 &nbsp;右ドラッグ上下: 俯角変更<br>
+    右ドラッグ左右: 回転 &nbsp;ホイール: ズーム</p>
+    <p style="margin-top:6px"><span class="device">SP</span><br>
+    1本指: 移動 &nbsp;2本指回転: 視点変更<br>
+    ピンチ: ズーム</p>
+    <p style="margin-top:6px"><span class="device">共通</span><br>
+    右上 コンパス針 クリックで北向きリセット</p>
+  </div>
+</div>
+<a id="aizen-link" href="https://aizen2024.com/data-as-soil/?utm_source=pwa&utm_medium=referral&utm_campaign=nagasaki_3dmap" target="_blank" rel="noopener">🏠 あいぜん不動産サイトへ</a>
+<button id="guide-toggle" onclick="expandGuide()">&#x1F4CD; 操作方法</button>
+
+<script>
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// 体験スポット（眺望360°・鳥の目動画）ピン
+// 空き家バンクのような排他トグルは持たず、常時表示。
+// クリック→サムネイル付きポップアップ→新しいタブで開く。
+// PoCのため凡例UIは追加せず、ピンの種類はポップアップ内で説明する。
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+const VIEWSPOTS_URL = 'https://aizen2024.com/wp-content/uploads/2026/06/viewspots.geojson';
+const VIEWSPOT_ICON = { pano: '\u{1F4F8}', video: '\u{1F3A5}' }; // 📸 / 🎥
+const VIEWSPOT_BTN_LABEL = { pano: '360°ビューを見る', video: '動画を見る' };
+
+let viewspotMarkers = [];
+let viewspotCurrentPopup = null;
+
+function loadViewspots() {
+  fetch(VIEWSPOTS_URL)
+    .then(r => { if (!r.ok) throw new Error('fetch failed: viewspots'); return r.json(); })
+    .then(geojson => {
+      geojson.features.forEach(f => {
+        const p = f.properties;
+        const [lng, lat] = f.geometry.coordinates;
+
+        const el = document.createElement('div');
+        el.className = 'viewspot-marker type-' + p.spot_type;
+        el.textContent = VIEWSPOT_ICON[p.spot_type] || '\u{1F4CD}';
+        el.title = p.title;
+
+        const marker = new maplibregl.Marker({ element: el })
+          .setLngLat([lng, lat])
+          .addTo(map);
+
+        el.addEventListener('click', (ev) => {
+          ev.stopPropagation();
+          if (viewspotCurrentPopup) viewspotCurrentPopup.remove();
+          if (currentPopup) { currentPopup.remove(); currentPopup = null; }
+          if (akiyaCurrentPopup) { akiyaCurrentPopup.remove(); akiyaCurrentPopup = null; }
+
+          const btnLabel = VIEWSPOT_BTN_LABEL[p.spot_type] || '見る';
+          const thumbHtml = p.thumb
+            ? '<img class="vs-thumb" src="' + p.thumb + '" alt="' + p.title + '">'
+            : '';
+          const shotDateHtml = p.shot_date
+            ? '<div class="vs-shotdate">撮影日: ' + p.shot_date + '</div>'
+            : '';
+
+          viewspotCurrentPopup = new maplibregl.Popup({
+            closeButton: true, maxWidth: '220px', className: 'viewspot-popup'
+          })
+            .setLngLat([lng, lat])
+            .setHTML(
+              '<div class="popup-inner">' +
+              thumbHtml +
+              '<div class="vs-body">' +
+              '<div class="vs-title">' + p.title + '</div>' +
+              '<div class="vs-subtitle">' + (p.subtitle || '') + '</div>' +
+              shotDateHtml +
+              '<a class="vs-link" href="' + p.url + '" target="_blank" rel="noopener">' + btnLabel + '</a>' +
+              '</div></div>'
+            )
+            .addTo(map);
+
+          // 計測：親サイトのdataLayerへpostMessage（既存のmap_town_search方式と同じ流儀）
+          sendViewspotClickEvent(p.spot_type, p.title);
+        });
+
+        viewspotMarkers.push(marker);
+      });
+    })
+    .catch(err => console.error('Viewspots GeoJSON error:', err));
+}
+
+function sendViewspotClickEvent(spotType, title) {
+  try {
+    window.parent.postMessage({
+      event: 'viewspot_click',
+      spot_type: spotType,
+      spot_title: title
+    }, 'https://aizen2024.com');
+  } catch(e) {}
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// 電停ハブ → 鳥の目動画ピン（VS-2）
+// 電停は常時表示。クリックでポップアップ内に目的地一覧を表示し、
+// 目的地を選ぶとマップ上に鳥の目ピン＋ライン（電停～目的地）が出現する。
+// 鳥の目ピンをクリックすると既存のviewspot-popup（サムネイル＋外部リンク）と
+// 同じ流儀でYouTubeページを新タブで開く。
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+const TRAM_STOPS_URL = 'https://aizen2024.com/wp-content/uploads/2026/06/tram_stops.geojson';
+
+let tramStopMarkers = [];
+let tramStopCurrentPopup = null;
+let aerialPinMarkers = {};   // destinationId -> maplibregl.Marker
+let aerialLineSourceAdded = false;
+let aerialCurrentPopup = null;
+let aerialBirdMarker = null; // 🐦 先端を飛ぶ鳥マーカー
+
+function loadTramStops() {
+  fetch(TRAM_STOPS_URL)
+    .then(r => { if (!r.ok) throw new Error('fetch failed: tram_stops'); return r.json(); })
+    .then(geojson => {
+      // ライン描画用の空のGeoJSONソース・レイヤーを先に用意
+      if (!aerialLineSourceAdded) {
+        map.addSource('aerial-route', {
+          type: 'geojson',
+          data: { type: 'FeatureCollection', features: [] }
+        });
+        // 影レイヤー（先に追加して白線の下に配置）
+        map.addLayer({
+          id: 'aerial-route-line-shadow',
+          type: 'line',
+          source: 'aerial-route',
+          layout: { 'visibility': 'none', 'line-cap': 'round', 'line-join': 'round' },
+          paint: {
+            'line-color': '#0F6E56',
+            'line-width': 7,
+            'line-opacity': 0.6
+          }
+        });
+        // 白線（影の上に重ねて立体感を出す）
+        map.addLayer({
+          id: 'aerial-route-line',
+          type: 'line',
+          source: 'aerial-route',
+          layout: { 'visibility': 'none', 'line-cap': 'round', 'line-join': 'round' },
+          paint: {
+            'line-color': '#ffffff',
+            'line-width': 4,
+            'line-opacity': 1.0
+          }
+        });
+        aerialLineSourceAdded = true;
+      }
+
+      geojson.features.forEach(f => {
+        const p = f.properties;
+        const [lng, lat] = f.geometry.coordinates;
+
+        const el = document.createElement('div');
+        el.className = 'tram-stop-marker';
+        el.textContent = '\u{1F68B}'; // 🚋
+        el.title = p.stop_name;
+
+        const marker = new maplibregl.Marker({ element: el })
+          .setLngLat([lng, lat])
+          .addTo(map);
+
+        el.addEventListener('click', (ev) => {
+          ev.stopPropagation();
+          onTramStopClick(p, [lng, lat], el);
+        });
+
+        tramStopMarkers.push(marker);
+      });
+    })
+    .catch(err => console.error('Tram stops GeoJSON error:', err));
+}
+
+function onTramStopClick(stopProps, stopCoords, markerEl) {
+  // 既存の他ポップアップを閉じる（既存パターンに合わせて統一）
+  if (tramStopCurrentPopup) tramStopCurrentPopup.remove();
+  if (currentPopup) { currentPopup.remove(); currentPopup = null; }
+  if (akiyaCurrentPopup) { akiyaCurrentPopup.remove(); akiyaCurrentPopup = null; }
+  if (viewspotCurrentPopup) { viewspotCurrentPopup.remove(); viewspotCurrentPopup = null; }
+  if (aerialCurrentPopup) { aerialCurrentPopup.remove(); aerialCurrentPopup = null; }
+
+  document.querySelectorAll('.tram-stop-marker.active').forEach(e => e.classList.remove('active'));
+  markerEl.classList.add('active');
+
+  const destinations = stopProps.destinations || [];
+  const listHtml = destinations.map(d =>
+    '<button class="ts-dest-btn" onclick="event.stopPropagation(); showAerialDestination(\'' + d.id + '\')">' + (d.btn_label || d.title + ' へ飛ぶ') + '</button>'
+  ).join('');
+
+  tramStopCurrentPopup = new maplibregl.Popup({
+    closeButton: true, closeOnClick: false, maxWidth: '220px', className: 'tram-stop-popup'
+  })
+    .setLngLat(stopCoords)
+    .setHTML(
+      '<div class="popup-inner">' +
+      '<div class="ts-title">' + stopProps.stop_name + ' から見る空撮</div>' +
+      '<div class="ts-dest-list">' + listHtml + '</div>' +
+      '</div>'
+    )
+    .addTo(map);
+
+  // 現在の電停情報を一時保持（目的地ピン生成時にライン描画で使う）
+  window._currentTramStopContext = { stopCoords, destinations };
+}
+
+function showAerialDestination(destinationId) {
+  const ctx = window._currentTramStopContext;
+  if (!ctx) return;
+  const dest = ctx.destinations.find(d => d.id === destinationId);
+  if (!dest) return;
+
+  // 電停の目的地一覧ポップアップを閉じる（鳥の目ピン・ラインとの重なり防止）
+  if (tramStopCurrentPopup) { tramStopCurrentPopup.remove(); tramStopCurrentPopup = null; }
+  document.querySelectorAll('.tram-stop-marker.active').forEach(e => e.classList.remove('active'));
+
+  const isNewPin = !aerialPinMarkers[destinationId];
+
+  // 既存の目的地ピンが既にあれば再利用、なければ新規作成
+  if (isNewPin) {
+    const el = document.createElement('div');
+    el.className = 'viewspot-marker type-video';
+    el.textContent = '\u{1F3A5}'; // 🎥
+    el.title = dest.title;
+
+    const marker = new maplibregl.Marker({ element: el })
+      .setLngLat(dest.coordinates)
+      .addTo(map);
+
+    el.addEventListener('click', (ev) => {
+      ev.stopPropagation();
+      openAerialPopup(dest);
+    });
+
+    aerialPinMarkers[destinationId] = marker;
+  }
+
+  // 電停と目的地の両方が画面内に収まるようにズーム調整
+  const bounds = [
+    [Math.min(ctx.stopCoords[0], dest.coordinates[0]), Math.min(ctx.stopCoords[1], dest.coordinates[1])],
+    [Math.max(ctx.stopCoords[0], dest.coordinates[0]), Math.max(ctx.stopCoords[1], dest.coordinates[1])]
+  ];
+  const currentBounds = map.getBounds();
+  const bothVisible =
+    currentBounds.contains(ctx.stopCoords) &&
+    currentBounds.contains(dest.coordinates);
+
+  function startAnimation() {
+    // ライン：電停→目的地へ滑空するように線形補間でアニメーション表示
+    animateAerialRoute(ctx.stopCoords, dest.coordinates, () => {
+      // ライン到達後、ピンをふわっと出現させる（既存ピンの再選択時はスキップ）
+      if (isNewPin) {
+        const pinEl = aerialPinMarkers[destinationId].getElement();
+        pinEl.classList.remove('aerial-pin-enter');
+        // リフローを挟んでアニメーションを再トリガー
+        void pinEl.offsetWidth;
+        pinEl.classList.add('aerial-pin-enter');
+        // ピン出現アニメーション（0.5s）完了後にポップアップを開く
+        setTimeout(() => openAerialPopup(dest), 520);
+      } else {
+        // 既存ピンの再選択時はすぐに開く
+        openAerialPopup(dest);
+      }
+    });
+  }
+
+  if (!bothVisible) {
+    map.fitBounds(bounds, { padding: 120, pitch: 30, duration: 800, maxZoom: 12 });
+    map.once('moveend', startAnimation);
+  } else {
+    startAnimation();
+  }
+}
+
+function animateAerialRoute(fromCoords, toCoords, onComplete) {
+  map.setLayoutProperty('aerial-route-line', 'visibility', 'visible');
+  map.setLayoutProperty('aerial-route-line-shadow', 'visibility', 'visible');
+
+  // 🐦 鳥マーカーを生成（初回のみ）
+  if (!aerialBirdMarker) {
+    const birdEl = document.createElement('div');
+    birdEl.style.cssText = 'width:40px;height:40px;filter:drop-shadow(0 2px 4px rgba(0,0,0,0.5));';
+    birdEl.innerHTML = '<svg viewBox="-35 -35 90 80" xmlns="http://www.w3.org/2000/svg"><ellipse cx="0" cy="5" rx="20" ry="12" fill="white"/><circle cx="-10" cy="-2" r="9" fill="white"/><path d="M-20 -2 C-28 -20 -8 -28 10 -20 C22 -28 36 -24 38 -12 C28 -8 20 -2 16 6 C26 2 38 4 42 12 C30 14 20 18 12 22 C2 28 -10 24 -18 14Z" fill="white"/><path d="M-12 18 C-18 26 -24 30 -28 32 C-22 26 -16 20 -10 18Z" fill="white"/><circle cx="-14" cy="-4" r="3" fill="#2d5a27"/><path d="M-20 -2 L-28 -4 L-22 -1Z" fill="#e8c87a"/><path d="M14 22 C18 30 22 32 24 36" stroke="#7ab648" stroke-width="2" fill="none"/><ellipse cx="18" cy="28" rx="5" ry="3" fill="#7ab648" transform="rotate(-30,18,28)"/><ellipse cx="22" cy="33" rx="4" ry="2.5" fill="#7ab648" transform="rotate(-20,22,33)"/></svg>';
+    aerialBirdMarker = new maplibregl.Marker({ element: birdEl, anchor: 'center' })
+      .setLngLat(fromCoords)
+      .addTo(map);
+  } else {
+    aerialBirdMarker.setLngLat(fromCoords);
+    aerialBirdMarker.getElement().style.display = 'block';
+  }
+
+  const durationMs = 2000;
+  const startTime = performance.now();
+
+  function step(now) {
+    const t = Math.min(1, (now - startTime) / durationMs);
+    // easeInOutQuad（最初ゆっくり→中盤速く→最後ゆっくり）
+    const eased = t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
+    const currentEnd = [
+      fromCoords[0] + (toCoords[0] - fromCoords[0]) * eased,
+      fromCoords[1] + (toCoords[1] - fromCoords[1]) * eased
+    ];
+
+    map.getSource('aerial-route').setData({
+      type: 'FeatureCollection',
+      features: [{
+        type: 'Feature',
+        geometry: { type: 'LineString', coordinates: [fromCoords, currentEnd] },
+        properties: {}
+      }]
+    });
+
+    // 🐦 鳥を先端に追従させる
+    aerialBirdMarker.setLngLat(currentEnd);
+
+    if (t < 1) {
+      requestAnimationFrame(step);
+    } else {
+      // アニメーション完了後、鳥を非表示にする
+      aerialBirdMarker.getElement().style.display = 'none';
+      if (onComplete) onComplete();
+    }
+  }
+
+  requestAnimationFrame(step);
+}
+
+function openAerialPopup(dest) {
+  if (aerialCurrentPopup) aerialCurrentPopup.remove();
+
+  const thumbHtml = dest.thumb
+    ? '<img class="vs-thumb" src="' + dest.thumb + '" alt="' + dest.title + '">'
+    : '';
+  const shotDateHtml = dest.shot_date
+    ? '<div class="vs-shotdate">撮影日: ' + dest.shot_date + '</div>'
+    : '';
+
+  aerialCurrentPopup = new maplibregl.Popup({
+    closeButton: true, maxWidth: '220px', className: 'viewspot-popup'
+  })
+    .setLngLat(dest.coordinates)
+    .setHTML(
+      '<div class="popup-inner">' +
+      thumbHtml +
+      '<div class="vs-body">' +
+      '<div class="vs-title">' + dest.title + '</div>' +
+      '<div class="vs-subtitle">' + (dest.subtitle || '') + '</div>' +
+      shotDateHtml +
+      '<a class="vs-link" href="' + dest.youtube_url + '" target="_blank" rel="noopener">動画を見る</a>' +
+      '</div></div>'
+    )
+    .addTo(map);
+
+  sendViewspotClickEvent('video', dest.title);
+}
+
+function hideAerialRoute() {
+  if (aerialLineSourceAdded) {
+    map.setLayoutProperty('aerial-route-line', 'visibility', 'none');
+    map.setLayoutProperty('aerial-route-line-shadow', 'visibility', 'none');
+  }
+  if (aerialBirdMarker) aerialBirdMarker.getElement().style.display = 'none';
+  if (aerialCurrentPopup) { aerialCurrentPopup.remove(); aerialCurrentPopup = null; }
+}
+
+// 既存の onPopToggle / onYotoToggle と同じ
+//   ・ON時に他のトグルをOFFにする（排他制御）
+//   ・OFF時に選択状態・ポップアップ・凡例をリセットする
+// パターンに揃えてある。
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+const AKIYA_URL      = 'https://aizen2024.com/wp-content/uploads/2026/06/akiya-1.geojson';
+const AKIYA_RATE_URL = 'https://aizen2024.com/wp-content/uploads/2026/06/akiya_rate.geojson';
+
+let akiyaLayerReady = false;
+let pendingAkiyaVisibility = false;
+let akiyaCurrentPopup = null;
+let akiyaIconsRegistered = false; // map.addImageで登録済みのアイコンID集合の初期化フラグ
+let akiyaPinFeatures = []; // 価格・徒歩圏フィルタ用に、生成したピンfeatureを保持
+
+const AKIYA_RATE_COLOR = [
+  'step', ['get', 'akiya_rate_pct'],
+  '#FFCDD2',   // 10〜15%未満
+  15, '#C62828'  // 15%以上
+];
+
+const AKIYA_TORIHIKI_LABEL = { sale: '売', rent: '賃', both: '両', unknown: '?' };
+const AKIYA_TORIHIKI_TEXT  = { sale: '売買希望', rent: '賃貸希望', both: '売買・賃貸どちらも可', unknown: '要確認' };
+const AKIYA_KUBUN_TEXT     = { building: '空き家（建物あり）', land: '空き地（土地のみ）' };
+const AKIYA_KUBUN_COLOR    = { building: '#1a6b3c', land: '#C2841C' };
+
+function loadAkiyaLayer() {
+  if (akiyaLayerReady) {
+    // 2回目以降：既存レイヤーを再表示するだけ
+    map.setLayoutProperty('akiya-rate-fill', 'visibility', 'visible');
+    map.setLayoutProperty('akiya-pin-radius-fill', 'visibility', 'visible');
+    map.setLayoutProperty('akiya-pin-radius-outline', 'visibility', 'visible');
+    map.setLayoutProperty('akiya-pins-icon', 'visibility', 'visible');
+    map.setLayoutProperty('akiya-pins-badge-icon', 'visibility', 'visible');
+    map.setPaintProperty('town-outline', 'line-color', '#fff');
+    map.setPaintProperty('town-outline', 'line-opacity', 0.8);
+    document.getElementById('akiya-legend').classList.add('visible');
+    document.getElementById('akiya-pin-legend').classList.add('visible');
+    return;
+  }
+
+  // --- ① 面塗り（空き家発生率） ---
+  fetch(AKIYA_RATE_URL)
+    .then(r => { if (!r.ok) throw new Error('fetch failed: akiya_rate'); return r.json(); })
+    .then(geojson => {
+      map.addSource('akiya-rate', { type: 'geojson', data: geojson });
+      map.addLayer({
+        id: 'akiya-rate-fill',
+        type: 'fill',
+        source: 'akiya-rate',
+        layout: { visibility: 'visible' },
+        paint: {
+          'fill-color': AKIYA_RATE_COLOR,
+          'fill-opacity': 0.45
+        }
+      }, 'town-highlight-fill');
+
+      map.setPaintProperty('town-outline', 'line-color', '#fff');
+      map.setPaintProperty('town-outline', 'line-opacity', 0.85);
+
+      map.on('click', 'akiya-rate-fill', e => {
+        if (!e.features || !e.features.length) return;
+        if (selectedTown) return;
+
+        // ── 同地点に人口増減レイヤー(pop-fill)のfeatureがある場合は、
+        //    そちらのクリックハンドラ(showPopup)に処理を譲り、
+        //    空き家発生率ポップアップは出さない（2重表示防止）。
+        //    人口増減トグルがOFFの間はpop-fillのfill-opacityが0だが、
+        //    レイヤー自体は存在しmap.on('click','pop-fill',...)は有効なため、
+        //    ここで重複してしまう。
+        const popFeatures = map.queryRenderedFeatures(e.point, { layers: ['pop-fill'] });
+        if (popFeatures.length) return;
+
+        if (akiyaCurrentPopup) akiyaCurrentPopup.remove();
+        if (currentPopup) { currentPopup.remove(); currentPopup = null; }
+        if (typeof viewspotCurrentPopup !== 'undefined' && viewspotCurrentPopup) { viewspotCurrentPopup.remove(); viewspotCurrentPopup = null; }
+
+        const p = e.features[0].properties;
+        const PopupClass = window.maplibregl ? window.maplibregl.Popup : null;
+        if (!PopupClass) return;
+
+        akiyaCurrentPopup = new PopupClass({ closeButton: true, closeOnClick: true })
+          .setLngLat(e.lngLat)
+          .setHTML(
+            '<div class="popup-inner">' +
+            '<div class="popup-title">' + p.S_NAME + '</div>' +
+            '<div class="popup-row"><span>空き家発生率</span><span>' + p.akiya_rate_pct + '%</span></div>' +
+            '<div class="popup-note">出典: 長崎市空家等対策計画（R8.3）</div>' +
+            '</div>'
+          )
+          .addTo(map);
+      });
+      map.on('mouseenter', 'akiya-rate-fill', () => { if (!selectedTown) map.getCanvas().style.cursor = 'pointer'; });
+      map.on('mouseleave', 'akiya-rate-fill', () => { if (!selectedTown) map.getCanvas().style.cursor = ''; });
+
+      document.getElementById('akiya-legend').classList.add('visible');
+    })
+    .catch(err => console.error('Akiya rate GeoJSON error:', err));
+
+  // --- ② ピン（バンク登録物件） ---
+  // 座標は「町丁目名」のジオコーディング結果であり、特定の建物位置ではない。
+  // 同一町丁目の物件は完全に同一座標を持つため、まず座標単位でグループ化し、
+  // 1地点＝1ピン（複数件は件数バッジ）として描画する。
+  // あわせて、各ピンの下に「この付近（町丁目内のどこか）」であることを
+  // 示す半透明の円（半径40m）を敷き、特定家屋への誤認を防ぐ。
+  //
+  // 【重要】ピンの描画はDOM Marker（maplibregl.Marker）ではなく、
+  // Canvasで生成したアイコン画像 + GLシンボルレイヤーで行う。
+  // DOM Markerは地形（3D起伏）が有効な状態だと標高の問い合わせが
+  // 不安定になり、傾斜地でピンが大きくズレる不具合がMapLibre本体に
+  // あるため（急傾斜地に多い長崎の空き家データで特に顕著だった）。
+  // シンボルレイヤーは用途地域の面塗りなどと同じ描画パイプラインで
+  // 処理されるため、この種のズレが起きない。
+  const AKIYA_PIN_RADIUS_KM = 0.04; // 40m。特定建物ではないことを示す程度の大きさに調整可能
+  const AKIYA_KUBUN_LIST    = ['building', 'land'];
+  const AKIYA_TORIHIKI_LIST = ['sale', 'rent', 'both', 'unknown'];
+
+  // 「区分×取引」の組み合わせごとに、色付きの丸＋文字のアイコン画像をCanvasで生成する
+  function registerAkiyaIcons() {
+    if (akiyaIconsRegistered) return;
+    const dpr = window.devicePixelRatio || 1;
+    const size = 28; // 表示サイズ(px)
+
+    function drawIcon(color, label) {
+      const canvas = document.createElement('canvas');
+      canvas.width = size * dpr;
+      canvas.height = size * dpr;
+      const ctx = canvas.getContext('2d');
+      ctx.scale(dpr, dpr);
+      const r = size / 2;
+      ctx.beginPath();
+      ctx.arc(r, r, r - 1.5, 0, Math.PI * 2);
+      ctx.fillStyle = color;
+      ctx.fill();
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = 'rgba(255,255,255,0.9)';
+      ctx.stroke();
+      ctx.fillStyle = '#fff';
+      ctx.font = 'bold 12px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(label, r, r + 1);
+      return { canvas, dpr };
+    }
+
+    AKIYA_KUBUN_LIST.forEach(kubun => {
+      AKIYA_TORIHIKI_LIST.forEach(torihiki => {
+        const id = 'akiya-icon-' + kubun + '-' + torihiki;
+        if (map.hasImage(id)) return;
+        const { canvas, dpr: ratio } = drawIcon(
+          AKIYA_KUBUN_COLOR[kubun] || '#666',
+          AKIYA_TORIHIKI_LABEL[torihiki] || '?'
+        );
+        const ctx = canvas.getContext('2d');
+        const raw = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        map.addImage(id, { width: canvas.width, height: canvas.height, data: new Uint8Array(raw.data.buffer) }, { pixelRatio: ratio });
+      });
+    });
+
+    akiyaIconsRegistered = true;
+  }
+
+  // 件数バッジ（同一地点に複数物件）用の小さい赤丸アイコンをCanvasで生成
+  function registerAkiyaBadgeIcon(count) {
+    const id = 'akiya-badge-' + count;
+    if (map.hasImage(id)) return id;
+    const dpr = window.devicePixelRatio || 1;
+    const size = 16;
+    const canvas = document.createElement('canvas');
+    canvas.width = size * dpr;
+    canvas.height = size * dpr;
+    const ctx = canvas.getContext('2d');
+    ctx.scale(dpr, dpr);
+    const r = size / 2;
+    ctx.beginPath();
+    ctx.arc(r, r, r - 1, 0, Math.PI * 2);
+    ctx.fillStyle = '#c0392b';
+    ctx.fill();
+    ctx.lineWidth = 1.5;
+    ctx.strokeStyle = '#fff';
+    ctx.stroke();
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 9px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(String(count), r, r + 1);
+    const raw = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    map.addImage(id, { width: canvas.width, height: canvas.height, data: new Uint8Array(raw.data.buffer) }, { pixelRatio: dpr });
+    return id;
+  }
+
+  fetch(AKIYA_URL)
+    .then(r => { if (!r.ok) throw new Error('fetch failed: akiya'); return r.json(); })
+    .then(geojson => {
+      const groups = new Map(); // key: "lng,lat" -> { lng, lat, items:[properties,...] }
+      geojson.features.forEach(f => {
+        const [lng, lat] = f.geometry.coordinates;
+        const key = lng.toFixed(6) + ',' + lat.toFixed(6);
+        if (!groups.has(key)) groups.set(key, { lng, lat, items: [] });
+        groups.get(key).items.push(f.properties);
+      });
+
+      registerAkiyaIcons();
+
+      const radiusFeatures = [];
+      const pinFeatures = [];
+
+      groups.forEach(group => {
+        const { lng, lat, items } = group;
+        const primary = items[0]; // アイコンの色・記号は代表として先頭物件を使用
+        const count = items.length;
+
+        if (count > 1) registerAkiyaBadgeIcon(count);
+
+        pinFeatures.push({
+          type: 'Feature',
+          geometry: { type: 'Point', coordinates: [lng, lat] },
+          properties: {
+            kubun: primary.kubun,
+            torihiki: primary.torihiki,
+            count: count,
+            badge_icon: count > 1 ? ('akiya-badge-' + count) : '',
+            items_json: JSON.stringify(items),
+            matched: true // 価格・徒歩圏の絞り込み結果（絞り込み未実行時は常にtrue）
+          }
+        });
+
+        if (window.turf) {
+          // 同心円を5枚重ねて中心に向かって自然に濃くなる「もや」のような
+          // 見た目を作る（GLの塗りレイヤーに直接のぼかし機能が無いため）。
+          // 外側から内側の順に追加し、内側の円ほど下の円と重なって濃く見える。
+          const ringFractions = [1.0, 0.8, 0.6, 0.4, 0.2];
+          ringFractions.forEach((frac, idx) => {
+            const circle = turf.circle([lng, lat], AKIYA_PIN_RADIUS_KM * frac, { steps: 32, units: 'kilometers' });
+            circle.properties = { ring: idx }; // 0 = 一番外側
+            radiusFeatures.push(circle);
+          });
+        }
+      });
+
+      // ピン本体（色付き丸＋取引区分の文字）
+      akiyaPinFeatures = pinFeatures; // 価格・徒歩圏フィルタから参照するため保持
+      map.addSource('akiya-pins', {
+        type: 'geojson',
+        data: { type: 'FeatureCollection', features: pinFeatures }
+      });
+      map.addLayer({
+        id: 'akiya-pins-icon',
+        type: 'symbol',
+        source: 'akiya-pins',
+        layout: {
+          visibility: 'visible',
+          'icon-image': ['concat', 'akiya-icon-', ['get', 'kubun'], '-', ['get', 'torihiki']],
+          'icon-size': 1,
+          'icon-allow-overlap': true,
+          'icon-ignore-placement': true
+        },
+        paint: {
+          'icon-opacity': ['case', ['==', ['get', 'matched'], false], 0.15, 1]
+        }
+      });
+      // 件数バッジ（複数物件が同一地点にある場合のみ、右上に少しずらして重ねる）
+      map.addLayer({
+        id: 'akiya-pins-badge-icon',
+        type: 'symbol',
+        source: 'akiya-pins',
+        filter: ['>', ['get', 'count'], 1],
+        layout: {
+          visibility: 'visible',
+          'icon-image': ['get', 'badge_icon'],
+          'icon-size': 1,
+          'icon-offset': [16, -16],
+          'icon-allow-overlap': true,
+          'icon-ignore-placement': true
+        },
+        paint: {
+          'icon-opacity': ['case', ['==', ['get', 'matched'], false], 0.15, 1]
+        }
+      });
+
+      function showAkiyaPinPopup(e) {
+        if (!e.features || !e.features.length) return;
+        if (akiyaCurrentPopup) akiyaCurrentPopup.remove();
+        if (currentPopup) { currentPopup.remove(); currentPopup = null; }
+        if (typeof viewspotCurrentPopup !== 'undefined' && viewspotCurrentPopup) { viewspotCurrentPopup.remove(); viewspotCurrentPopup = null; }
+
+        const props = e.features[0].properties;
+        const items = JSON.parse(props.items_json);
+
+        const cardsHtml = items.map(p => {
+          const priceRow = (p.price_man && p.price_man > 0)
+            ? '<div class="popup-row"><span>希望価格</span><span>' + p.price_man.toLocaleString() + '万円</span></div>'
+            : '';
+          const rentRow = (p.rent_yen && p.rent_yen > 0)
+            ? '<div class="popup-row"><span>希望賃料</span><span>' + p.rent_yen.toLocaleString() + '円/月</span></div>'
+            : '';
+          return (
+            '<div class="popup-item">' +
+            '<div class="popup-title">' + p.name + '</div>' +
+            '<div style="margin-bottom:6px;">' +
+            '<span class="popup-badge badge-' + p.kubun + '">' + AKIYA_KUBUN_TEXT[p.kubun] + '</span>' +
+            '<span class="popup-badge" style="background:#666;">' + AKIYA_TORIHIKI_TEXT[p.torihiki] + '</span>' +
+            '</div>' +
+            '<div class="popup-row"><span>所在地</span><span>' + p.addr + '</span></div>' +
+            priceRow + rentRow +
+            '<a class="popup-link" href="' + p.url + '" target="_blank" rel="noopener">市公式ページで見る（別タブ）</a>' +
+            '</div>'
+          );
+        }).join('<hr class="popup-divider">');
+
+        akiyaCurrentPopup = new maplibregl.Popup({ closeButton: true, maxWidth: '260px', className: 'akiya-popup' })
+          .setLngLat(e.features[0].geometry.coordinates)
+          .setHTML(
+            '<div class="popup-inner">' +
+            (items.length > 1 ? '<div class="popup-group-title">この地点に' + items.length + '件</div>' : '') +
+            cardsHtml +
+            '<div class="popup-note">所在地は町丁目までの情報です（長崎市空き家空き地バンク公開情報）</div>' +
+            '</div>'
+          )
+          .addTo(map);
+      }
+      // MAP-FLOW-1：自動再生ループから呼び出せるように公開する（動作は変更しない）
+      window.showAkiyaPinPopup = showAkiyaPinPopup;
+
+      ['akiya-pins-icon', 'akiya-pins-badge-icon'].forEach(layerId => {
+        map.on('click', layerId, e => { e.originalEvent.stopPropagation(); showAkiyaPinPopup(e); });
+        map.on('mouseenter', layerId, () => { map.getCanvas().style.cursor = 'pointer'; });
+        map.on('mouseleave', layerId, () => { map.getCanvas().style.cursor = ''; });
+      });
+
+      // 不確実性円レイヤー（ピンの下に敷く半透明の円）
+      if (radiusFeatures.length) {
+        map.addSource('akiya-pin-radius', {
+          type: 'geojson',
+          data: { type: 'FeatureCollection', features: radiusFeatures }
+        });
+        map.addLayer({
+          id: 'akiya-pin-radius-fill',
+          type: 'fill',
+          source: 'akiya-pin-radius',
+          layout: { visibility: 'visible' },
+          paint: { 'fill-color': '#555555', 'fill-opacity': 0.14 }
+        }, 'town-highlight-fill');
+        map.addLayer({
+          id: 'akiya-pin-radius-outline',
+          type: 'line',
+          source: 'akiya-pin-radius',
+          filter: ['==', ['get', 'ring'], 0],
+          layout: { visibility: 'visible' },
+          paint: { 'line-color': '#888888', 'line-width': 1, 'line-dasharray': [2, 2] }
+        }, 'town-highlight-fill');
+      }
+
+      document.getElementById('akiya-pin-legend').classList.add('visible');
+      akiyaLayerReady = true;
+    })
+    .catch(err => console.error('Akiya pins GeoJSON error:', err));
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// 空き家バンクピンの「価格・徒歩圏」絞り込み
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+// 1件の物件（akiya-1.geojsonの1レコード）が、指定した価格条件を満たすか。
+// 未入力の条件は「その条件については絞り込まない」扱い。
+// 売買・賃貸どちらの項目に該当するかは物件のtorihikiで判定する。
+function tramItemPriceMatches(item, saleMax, rentMax) {
+  let saleOk = true, rentOk = true;
+  const isSaleType = item.torihiki === 'sale' || item.torihiki === 'both';
+  const isRentType = item.torihiki === 'rent' || item.torihiki === 'both';
+  if (isSaleType && saleMax !== null) {
+    saleOk = (item.price_man != null && item.price_man > 0 && item.price_man <= saleMax);
+  }
+  if (isRentType && rentMax !== null) {
+    rentOk = (item.rent_yen != null && item.rent_yen > 0 && item.rent_yen <= rentMax);
+  }
+  return saleOk && rentOk;
+}
+
+// 現在選択中の電停・トグル状態から、「徒歩圏」の判定に使うリング（多角形の頂点配列）を返す。
+// 電停未選択、またはどちらのトグルもOFFの場合はnull（＝徒歩圏では絞り込まない）。
+function getActiveTramWalkRing() {
+  if (tramSelectedIdx === null) return null;
+  const stop = tramStops[tramSelectedIdx];
+  const elevChk = document.getElementById('tram-elev-checkbox');
+  const circleChk = document.getElementById('tram-circle-checkbox');
+
+  if (elevChk.checked && tramElevCache[tramSelectedIdx]) {
+    return tramElevCache[tramSelectedIdx].map(p => [p.lon, p.lat]);
+  }
+  if (circleChk.checked) {
+    const ring = [];
+    for (let d = 0; d < 36; d++) {
+      const pt = tramOffsetLatLon(stop.lat, stop.lon, 800, d * 10);
+      ring.push([pt.lon, pt.lat]);
+    }
+    return ring;
+  }
+  return null;
+}
+
+function applyAkiyaFilter() {
+  const akiyaChk = document.getElementById('akiya-checkbox');
+  const statusEl = document.getElementById('akiya-filter-status');
+
+  if (!akiyaChk.checked || !akiyaLayerReady) {
+    statusEl.textContent = '先に「空き家バンクを表示」をONにしてください。';
+    statusEl.style.color = '#C62828';
+    return;
+  }
+
+  const saleRaw = document.getElementById('filter-sale-max').value;
+  const rentRaw = document.getElementById('filter-rent-max').value;
+  const saleMax = saleRaw !== '' ? Number(saleRaw) : null;
+  const rentMax = rentRaw !== '' ? Number(rentRaw) : null;
+  const ring = getActiveTramWalkRing();
+
+  let matchedCount = 0;
+  akiyaPinFeatures.forEach(f => {
+    const [lng, lat] = f.geometry.coordinates;
+    const geoMatch = !ring || tramPointInPolygon(lng, lat, ring);
+    let priceMatch = true;
+    if (geoMatch && (saleMax !== null || rentMax !== null)) {
+      const items = JSON.parse(f.properties.items_json);
+      priceMatch = items.some(item => tramItemPriceMatches(item, saleMax, rentMax));
+    }
+    const matched = geoMatch && priceMatch;
+    f.properties.matched = matched;
+    if (matched) matchedCount++;
+  });
+
+  map.getSource('akiya-pins').setData({ type: 'FeatureCollection', features: akiyaPinFeatures });
+
+  statusEl.style.color = '#555';
+  statusEl.textContent = matchedCount + '件が該当しました（' + akiyaPinFeatures.length + '地点中）。該当しないピンは薄く表示されます。';
+}
+
+function resetAkiyaFilter() {
+  document.getElementById('filter-sale-max').value = '';
+  document.getElementById('filter-rent-max').value = '';
+  akiyaPinFeatures.forEach(f => { f.properties.matched = true; });
+  if (map.getSource('akiya-pins')) {
+    map.getSource('akiya-pins').setData({ type: 'FeatureCollection', features: akiyaPinFeatures });
+  }
+  document.getElementById('akiya-filter-status').textContent = '';
+}
+
+function onAkiyaToggle(checked) {
+  if (checked) {
+    // ── 排他制御：人口増減・用途地域をOFFにする ──
+    const popChk = document.getElementById('pop-checkbox');
+    if (popChk && popChk.checked) {
+      popChk.checked = false;
+      onPopToggle(false);
+    }
+    const yotoChk = document.getElementById('yoto-checkbox');
+    if (yotoChk && yotoChk.checked) {
+      yotoChk.checked = false;
+      onYotoToggle(false);
+    }
+
+    if (layersReady) {
+      loadAkiyaLayer();
+    } else {
+      pendingAkiyaVisibility = true;
+    }
+  } else {
+    document.getElementById('akiya-legend').classList.remove('visible');
+    document.getElementById('akiya-pin-legend').classList.remove('visible');
+
+    if (akiyaCurrentPopup) {
+      akiyaCurrentPopup.remove();
+      akiyaCurrentPopup = null;
+    }
+
+    if (akiyaLayerReady) {
+      map.setLayoutProperty('akiya-rate-fill', 'visibility', 'none');
+      map.setLayoutProperty('akiya-pin-radius-fill', 'visibility', 'none');
+      map.setLayoutProperty('akiya-pin-radius-outline', 'visibility', 'none');
+      map.setLayoutProperty('akiya-pins-icon', 'visibility', 'none');
+      map.setLayoutProperty('akiya-pins-badge-icon', 'visibility', 'none');
+
+      const popOn  = document.getElementById('pop-checkbox').checked;
+      const yotoOn = document.getElementById('yoto-checkbox').checked;
+      if (!popOn && !yotoOn) {
+        map.setPaintProperty('town-outline', 'line-color', '#fff');
+        map.setPaintProperty('town-outline', 'line-opacity', 0.6);
+        map.setPaintProperty('town-outline', 'line-width', 1.0);
+      }
+    } else {
+      pendingAkiyaVisibility = false;
+    }
+  }
+  hideAerialRoute();
+}
+
+function closeAkiyaLegend() {
+  document.getElementById('akiya-legend').classList.remove('visible');
+}
+function closeAkiyaPinLegend() {
+  document.getElementById('akiya-pin-legend').classList.remove('visible');
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// 路面電車の徒歩圏（800m円 / 標高差30m以内フィルター）
+// 不動産情報ページ（custom-map.js）と同じアルゴリズム・データを使用。
+// 標高の取得は国土地理院APIをそのまま流用（3Dマップの地形データは
+// queryTerrainElevation()にズーム/ピッチ依存の既知の不具合があり、
+// 不動産情報ページとの結果不一致が起きうるため採用しない）。
+// 描画のみ3DマップのGLレイヤー方式で行う。
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+var tramStops = [
+    { name: "赤迫",               lat: 32.7939517, lon: 129.8574795 },
+    { name: "住吉",               lat: 32.7921428, lon: 129.8597737 },
+    { name: "昭和町通",           lat: 32.789552,  lon: 129.861038  },
+    { name: "千歳町",             lat: 32.790779,  lon: 129.860598  },
+    { name: "若葉町",             lat: 32.787838,  lon: 129.861639  },
+    { name: "長崎大学",           lat: 32.7847142, lon: 129.8624415 },
+    { name: "岩屋橋",             lat: 32.7822919, lon: 129.8623393 },
+    { name: "浦上車庫",           lat: 32.7794611, lon: 129.8613503 },
+    { name: "大橋",               lat: 32.7779379, lon: 129.8613893 },
+    { name: "平和公園",           lat: 32.7738396, lon: 129.8620585 },
+    { name: "原爆資料館",         lat: 32.7707332, lon: 129.8635463 },
+    { name: "大学病院",           lat: 32.7689063, lon: 129.8641470 },
+    { name: "浦上駅前",           lat: 32.7654786, lon: 129.8641821 },
+    { name: "茂里町",             lat: 32.7641532, lon: 129.8645262 },
+    { name: "スタジアムシティノース", lat: 32.7611237, lon: 129.8658297 },
+    { name: "スタジアムシティサウス", lat: 32.7579331, lon: 129.8688160 },
+    { name: "八千代町",           lat: 32.755344,  lon: 129.870275  },
+    { name: "長崎駅前",           lat: 32.7526286, lon: 129.8717885 },
+    { name: "五島町",             lat: 32.7492475, lon: 129.8722440 },
+    { name: "大波止",             lat: 32.746122,  lon: 129.872185  },
+    { name: "出島",               lat: 32.7439617, lon: 129.8717331 },
+    { name: "新地中華街",         lat: 32.7430148, lon: 129.8750893 },
+    { name: "西浜町",             lat: 32.7438616, lon: 129.8762251 },
+    { name: "浜町アーケード",     lat: 32.7446486, lon: 129.8767430 },
+    { name: "観光通",             lat: 32.7433151, lon: 129.8780358 },
+    { name: "思案橋",             lat: 32.7426336, lon: 129.8806058 },
+    { name: "崇福寺",             lat: 32.7412516, lon: 129.8825023 },
+    { name: "市役所",             lat: 32.749380,  lon: 129.880618  },
+    { name: "桜町",               lat: 32.7506866, lon: 129.8765441 },
+    { name: "めがね橋",           lat: 32.7470551, lon: 129.8785295 },
+    { name: "諏訪神社",           lat: 32.7524924, lon: 129.8845739 },
+    { name: "新大工町",           lat: 32.7522818, lon: 129.8867424 },
+    { name: "新中川町",           lat: 32.7522298, lon: 129.8908858 },
+    { name: "蛍茶屋",             lat: 32.7514014, lon: 129.8936462 },
+    { name: "メディカルセンター", lat: 32.7405472, lon: 129.8724735 },
+    { name: "大浦海岸通り",       lat: 32.737793,  lon: 129.870586  },
+    { name: "大浦天主堂",         lat: 32.7362268, lon: 129.8708923 },
+    { name: "石橋",               lat: 32.7344798, lon: 129.8722535 }
+];
+
+function populateTramStopSelect() {
+  const sel = document.getElementById('tram-walk-select');
+  tramStops.forEach((s, i) => {
+    const opt = document.createElement('option');
+    opt.value = i;
+    opt.textContent = s.name;
+    sel.appendChild(opt);
+  });
+}
+populateTramStopSelect();
+
+var TRAM_ELEV_DIRECTIONS = 12;
+var TRAM_ELEV_MAX_RADIUS = 800;
+var TRAM_ELEV_THRESHOLD  = 30;
+var TRAM_ELEV_API_DELAY  = 50;
+
+var tramSelectedIdx   = null;
+var tramCircleReady   = false; // 現在選択中の電停で円レイヤーが準備済みか
+var tramElevCache     = {};    // idx -> [[lng,lat], ...] 12方向の到達点キャッシュ
+var tramElevLoading   = false;
+
+function tramOffsetLatLon(lat, lon, dist, bear) {
+  const R = 6378137;
+  const bearRad = bear * Math.PI / 180;
+  const dLat = (dist * Math.cos(bearRad)) / R;
+  const dLon = (dist * Math.sin(bearRad)) / (R * Math.cos(lat * Math.PI / 180));
+  return { lat: lat + dLat * 180 / Math.PI, lon: lon + dLon * 180 / Math.PI };
+}
+
+function tramGetElevation(lat, lon) {
+  const url = 'https://cyberjapandata2.gsi.go.jp/general/dem/scripts/getelevation.php'
+    + '?lon=' + lon.toFixed(6) + '&lat=' + lat.toFixed(6) + '&outtype=JSON';
+  return fetch(url)
+    .then(r => r.json())
+    .then(d => { const e = parseFloat(d.elevation); return isNaN(e) ? null : e; })
+    .catch(() => null);
+}
+
+function tramDelay(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+function tramBinarySearchBoundary(baseLat, baseLon, baseElev, bearing, threshold, maxDist) {
+  let lo = 0, hi = maxDist, steps = 5, result = hi;
+  function step() {
+    if (steps <= 0 || hi - lo < 20) return Promise.resolve(result);
+    steps--;
+    const mid = (lo + hi) / 2;
+    const pt = tramOffsetLatLon(baseLat, baseLon, mid, bearing);
+    return tramDelay(TRAM_ELEV_API_DELAY)
+      .then(() => tramGetElevation(pt.lat, pt.lon))
+      .then(e => {
+        if (e === null || e <= 0) { hi = mid; result = lo; }
+        else {
+          const diff = Math.abs(e - baseElev);
+          if (diff <= threshold) { lo = mid; result = mid; }
+          else { hi = mid; result = lo; }
+        }
+        return step();
+      });
+  }
+  return step();
+}
+
+function tramHaversineDist(lat1, lon1, lat2, lon2) {
+  const R = 6378137;
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLon = (lon2 - lon1) * Math.PI / 180;
+  const a = Math.sin(dLat/2)*Math.sin(dLat/2) +
+            Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLon/2)*Math.sin(dLon/2);
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+}
+
+function tramInterpolateNulls(polyRaw, baseLat, baseLon) {
+  const n = polyRaw.length;
+  const polyPoints = new Array(n);
+  const hasValid = polyRaw.some(p => p !== null);
+  if (!hasValid) {
+    for (let i = 0; i < n; i++) {
+      polyPoints[i] = tramOffsetLatLon(baseLat, baseLon, TRAM_ELEV_MAX_RADIUS, i * (360 / n));
+    }
+    return polyPoints;
+  }
+  for (let i = 0; i < n; i++) {
+    if (polyRaw[i] !== null) { polyPoints[i] = polyRaw[i]; continue; }
+    let prevIdx = i, nextIdx = i;
+    for (let k = 1; k < n; k++) { const pi = (i - k + n) % n; if (polyRaw[pi] !== null) { prevIdx = pi; break; } }
+    for (let k = 1; k < n; k++) { const ni = (i + k) % n; if (polyRaw[ni] !== null) { nextIdx = ni; break; } }
+    const bear = i * (360 / n);
+    const prevDist = tramHaversineDist(baseLat, baseLon, polyRaw[prevIdx].lat, polyRaw[prevIdx].lon);
+    const nextDist = tramHaversineDist(baseLat, baseLon, polyRaw[nextIdx].lat, polyRaw[nextIdx].lon);
+    const prevSteps = (i - prevIdx + n) % n;
+    const nextSteps = (nextIdx - i + n) % n;
+    const totalSteps = prevSteps + nextSteps;
+    let interpDist = (prevSteps === 0 || totalSteps === 0) ? nextDist : prevDist + (nextDist - prevDist) * (prevSteps / totalSteps);
+    if (interpDist < 150) interpDist = Math.max(prevDist, nextDist);
+    polyPoints[i] = tramOffsetLatLon(baseLat, baseLon, interpDist, bear);
+  }
+  return polyPoints;
+}
+
+function tramCalcElevPolygon(lat, lon, onProgress) {
+  const total = TRAM_ELEV_DIRECTIONS + 1;
+  let completed = 0;
+  const MIN_VALID_DIST = 150;
+
+  return tramGetElevation(lat, lon).then(baseElev => {
+    if (baseElev === null) return Promise.reject(new Error('elevation_base_failed'));
+    completed++; if (onProgress) onProgress(completed, total);
+
+    const promises = [];
+    for (let i = 0; i < TRAM_ELEV_DIRECTIONS; i++) {
+      const bear = i * (360 / TRAM_ELEV_DIRECTIONS);
+      const startDelay = i * TRAM_ELEV_API_DELAY;
+      promises.push(
+        tramDelay(startDelay)
+          .then(() => tramBinarySearchBoundary(lat, lon, baseElev, bear, TRAM_ELEV_THRESHOLD, TRAM_ELEV_MAX_RADIUS))
+          .then(dist => {
+            completed++; if (onProgress) onProgress(completed, total);
+            return dist < MIN_VALID_DIST ? null : tramOffsetLatLon(lat, lon, dist, bear);
+          })
+      );
+    }
+    return Promise.all(promises).then(polyRaw => tramInterpolateNulls(polyRaw, lat, lon));
+  });
+}
+
+// ---- レイヤー準備 ----
+var tramStopIconRegistered = false;
+function registerTramStopIcon() {
+  if (tramStopIconRegistered || map.hasImage('tram-stop-icon')) { tramStopIconRegistered = true; return; }
+  const dpr = window.devicePixelRatio || 1;
+  const size = 30;
+  const canvas = document.createElement('canvas');
+  canvas.width = size * dpr; canvas.height = size * dpr;
+  const ctx = canvas.getContext('2d');
+  ctx.scale(dpr, dpr);
+  const r = size / 2;
+  ctx.beginPath();
+  ctx.arc(r, r, r - 2, 0, Math.PI * 2);
+  ctx.fillStyle = '#ffffff';
+  ctx.fill();
+  ctx.lineWidth = 2.5;
+  ctx.strokeStyle = '#e60012';
+  ctx.stroke();
+  ctx.font = Math.round(size * 0.56) + 'px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('\u{1F68B}', r, r + 1); // 🚋 路面電車の絵文字
+  const raw = ctx.getImageData(0, 0, canvas.width, canvas.height);
+  map.addImage('tram-stop-icon', { width: canvas.width, height: canvas.height, data: new Uint8Array(raw.data.buffer) }, { pixelRatio: dpr });
+  tramStopIconRegistered = true;
+}
+
+function ensureTramWalkLayers() {
+  if (map.getSource('tram-walk-circle')) return;
+
+  registerTramStopIcon();
+
+  // 選択中の電停ピン（路面電車アイコン）
+  map.addSource('tram-stop-marker', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+  map.addLayer({
+    id: 'tram-stop-marker-icon', type: 'symbol', source: 'tram-stop-marker',
+    layout: {
+      visibility: 'none',
+      'icon-image': 'tram-stop-icon', 'icon-size': 1,
+      'icon-allow-overlap': true, 'icon-ignore-placement': true
+    }
+  });
+
+  // 半径800m（判定の目安となる境界円。他のどの塗りより必ず手前に出す）
+  map.addSource('tram-walk-circle', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+  map.addLayer({
+    id: 'tram-walk-circle-outline', type: 'line', source: 'tram-walk-circle',
+    layout: { visibility: 'none' },
+    paint: { 'line-color': '#ff6d00', 'line-width': 3, 'line-dasharray': [3, 2] }
+  });
+
+  // 標高差30m以内の徒歩圏（山の緑と被らない、はっきりした青塗り）
+  map.addSource('tram-walk-elev', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+  map.addLayer({
+    id: 'tram-walk-elev-fill', type: 'fill', source: 'tram-walk-elev',
+    layout: { visibility: 'none' },
+    paint: { 'fill-color': '#1565C0', 'fill-opacity': 0.42 }
+  }, 'town-highlight-fill');
+  map.addLayer({
+    id: 'tram-walk-elev-outline', type: 'line', source: 'tram-walk-elev',
+    layout: { visibility: 'none' },
+    paint: { 'line-color': '#0d47a1', 'line-width': 2.5 }
+  }, 'town-highlight-fill');
+}
+
+function tramSetStatus(text, isError) {
+  const el = document.getElementById('tram-elev-status');
+  el.textContent = text || '';
+  el.classList.toggle('error', !!isError);
+}
+
+function onTramStopChange() {
+  const idx = document.getElementById('tram-walk-select').value;
+  const circleChk = document.getElementById('tram-circle-checkbox');
+  const elevChk = document.getElementById('tram-elev-checkbox');
+  const legend = document.getElementById('tram-legend');
+  const listArea = document.getElementById('tram-chome-list');
+
+  if (idx === '') {
+    tramSelectedIdx = null;
+    circleChk.disabled = true; elevChk.disabled = true;
+    circleChk.checked = false; elevChk.checked = false;
+    hideTramWalkLayers();
+    tramSetStatus('');
+    legend.style.display = 'none';
+    listArea.style.display = 'none';
+    return;
+  }
+
+  tramSelectedIdx = parseInt(idx, 10);
+  circleChk.disabled = false; elevChk.disabled = false;
+  tramSetStatus('');
+  legend.style.display = 'block';
+
+  ensureTramWalkLayers();
+
+  // 電停ピンを表示し、その電停まで地図を移動
+  const stop = tramStops[tramSelectedIdx];
+  const pinFeature = { type: 'Feature', properties: { name: stop.name }, geometry: { type: 'Point', coordinates: [stop.lon, stop.lat] } };
+  map.getSource('tram-stop-marker').setData({ type: 'FeatureCollection', features: [pinFeature] });
+  map.setLayoutProperty('tram-stop-marker-icon', 'visibility', 'visible');
+  map.flyTo({ center: [stop.lon, stop.lat], zoom: 14, duration: 1200 });
+
+  if (circleChk.checked) {
+    drawTramCircle();
+  } else {
+    map.setLayoutProperty('tram-walk-circle-outline', 'visibility', 'none');
+  }
+
+  if (elevChk.checked) {
+    elevChk.checked = false; // 電停が変わったら再計算のためチェックを一度外す
+    onTramElevToggle(true);
+  } else {
+    map.setLayoutProperty('tram-walk-elev-fill', 'visibility', 'none');
+    map.setLayoutProperty('tram-walk-elev-outline', 'visibility', 'none');
+    listArea.style.display = 'none';
+  }
+}
+
+function hideTramWalkLayers() {
+  if (!map.getSource('tram-walk-circle')) return;
+  ['tram-stop-marker-icon',
+   'tram-walk-circle-outline',
+   'tram-walk-elev-fill', 'tram-walk-elev-outline'].forEach(id => {
+    map.setLayoutProperty(id, 'visibility', 'none');
+  });
+}
+
+// 現在表示中の円・徒歩圏ポリゴンが見えるように視点を調整する。
+// map.fitBounds()はピッチ（3D傾き）がついた状態だと期待通りに
+// 機能しないことがあるため、傾きをそのまま保つflyTo（固定ズーム）を使う。
+function fitTramWalkView() {
+  if (tramSelectedIdx === null) return;
+  const stop = tramStops[tramSelectedIdx];
+  map.flyTo({ center: [stop.lon, stop.lat], zoom: 14.3, duration: 800 });
+}
+
+function drawTramCircle() {
+  if (tramSelectedIdx === null || !window.turf) return;
+  const stop = tramStops[tramSelectedIdx];
+  const circle = turf.circle([stop.lon, stop.lat], 0.8, { steps: 64, units: 'kilometers' });
+  map.getSource('tram-walk-circle').setData({ type: 'FeatureCollection', features: [circle] });
+  map.setLayoutProperty('tram-walk-circle-outline', 'visibility', 'visible');
+  fitTramWalkView();
+}
+
+function onTramCircleToggle(checked) {
+  if (tramSelectedIdx === null) return;
+  ensureTramWalkLayers();
+  if (checked) {
+    drawTramCircle();
+  } else {
+    map.setLayoutProperty('tram-walk-circle-outline', 'visibility', 'none');
+  }
+}
+
+function onTramElevToggle(checked) {
+  if (tramSelectedIdx === null) return;
+  ensureTramWalkLayers();
+
+  if (!checked) {
+    map.setLayoutProperty('tram-walk-elev-fill', 'visibility', 'none');
+    map.setLayoutProperty('tram-walk-elev-outline', 'visibility', 'none');
+    document.getElementById('tram-chome-list').style.display = 'none';
+    tramSetStatus('');
+    return;
+  }
+
+  const idx = tramSelectedIdx;
+  const stop = tramStops[idx];
+
+  if (tramElevCache[idx]) {
+    drawTramElevPolygon(tramElevCache[idx]);
+    computeChomeList(tramElevCache[idx], stop);
+    return;
+  }
+
+  if (tramElevLoading) return;
+  tramElevLoading = true;
+  tramSetStatus('標高差を計算中... (0/13)');
+  document.getElementById('tram-chome-list').style.display = 'none';
+
+  tramCalcElevPolygon(stop.lat, stop.lon, (done, total) => {
+    tramSetStatus('標高差を計算中... (' + done + '/' + total + ')');
+  }).then(polyPoints => {
+    tramElevLoading = false;
+    tramElevCache[idx] = polyPoints;
+    // 選択がその間に変わっていないか確認
+    if (tramSelectedIdx === idx && document.getElementById('tram-elev-checkbox').checked) {
+      drawTramElevPolygon(polyPoints);
+      computeChomeList(polyPoints, stop);
+      tramSetStatus('');
+    }
+  }).catch(() => {
+    tramElevLoading = false;
+    tramSetStatus('標高データの取得に失敗しました。時間をおいて再度お試しください。', true);
+    document.getElementById('tram-elev-checkbox').checked = false;
+  });
+}
+
+function drawTramElevPolygon(polyPoints) {
+  const coords = polyPoints.map(p => [p.lon, p.lat]);
+  coords.push(coords[0]);
+  const feature = { type: 'Feature', properties: {}, geometry: { type: 'Polygon', coordinates: [coords] } };
+  map.getSource('tram-walk-elev').setData({ type: 'FeatureCollection', features: [feature] });
+  map.setLayoutProperty('tram-walk-elev-fill', 'visibility', 'visible');
+  map.setLayoutProperty('tram-walk-elev-outline', 'visibility', 'visible');
+  fitTramWalkView();
+}
+
+// ---- 町丁目の点包含テスト（ray casting法。custom-map.jsと同じ考え方） ----
+var TRAM_GRID_STEP = 0.0005; // 約50m間隔
+
+function tramPointInPolygon(px, py, poly) {
+  let inside = false;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const xi = poly[i][0], yi = poly[i][1];
+    const xj = poly[j][0], yj = poly[j][1];
+    if (((yi > py) !== (yj > py)) && (px < (xj - xi) * (py - yi) / (yj - yi) + xi)) inside = !inside;
+  }
+  return inside;
+}
+
+function tramPolygonCentroid(pts) {
+  let lat = 0, lon = 0;
+  for (let i = 0; i < pts.length; i++) { lat += pts[i][1]; lon += pts[i][0]; }
+  return { lat: lat / pts.length, lon: lon / pts.length };
+}
+
+function computeChomeList(polyPoints, stop) {
+  const listArea = document.getElementById('tram-chome-list');
+  if (!townGeoJSON) { listArea.style.display = 'none'; return; }
+
+  listArea.style.display = 'block';
+  listArea.innerHTML = '<span style="color:#999;">町丁目データを判定中...</span>';
+
+  const elevRing = polyPoints.map(p => [p.lon, p.lat]);
+  const circleRing800 = [];
+  for (let d = 0; d < 36; d++) {
+    const pt = tramOffsetLatLon(stop.lat, stop.lon, 800, d * 10);
+    circleRing800.push([pt.lon, pt.lat]);
+  }
+
+  const insideNames = [];
+  const outsideNames = [];
+  const outsideFeatures = [];
+
+  townGeoJSON.features.forEach(feature => {
+    if (!feature.geometry) return;
+    const geomType = feature.geometry.type;
+    const coords = feature.geometry.coordinates;
+    const rings = [];
+    if (geomType === 'Polygon') rings.push(coords[0]);
+    else if (geomType === 'MultiPolygon') coords.forEach(poly => rings.push(poly[0]));
+    if (rings.length === 0) return;
+
+    const props = feature.properties || {};
+    const rawName = props.S_NAME || props.MOJI || props.name || '不明';
+    const displayName = NODOT_MAP[rawName] || rawName;
+
+    let totalChome = 0, totalElev = 0, total800 = 0;
+    rings.forEach(ring => {
+      const r = tramMajorityRatioCounts(ring, elevRing, circleRing800);
+      totalChome += r.inChome; totalElev += r.inElev; total800 += r.in800;
+    });
+
+    let inElev, in800;
+    if (totalChome === 0) {
+      const c = tramPolygonCentroid(rings[0]);
+      inElev = tramPointInPolygon(c.lon, c.lat, elevRing);
+      in800  = tramPointInPolygon(c.lon, c.lat, circleRing800);
+    } else {
+      // 判定閾値：40%（2026-07-01変更）。不動産情報ページは50%だが、
+      // 大学病院電停で坂本二丁目（重なり43.2%）が漏れていたため、
+      // Qtaroさんの判断で40%に緩和。※他の電停・町丁目にも共通で影響する。
+      inElev = (totalElev / totalChome) > 0.4;
+      in800  = (total800  / totalChome) > 0.4;
+    }
+
+    if (inElev) {
+      if (!insideNames.some(o => o.raw === rawName)) insideNames.push({ display: displayName, raw: rawName });
+    } else if (in800) {
+      if (!outsideNames.some(o => o.raw === rawName)) outsideNames.push({ display: displayName, raw: rawName });
+      outsideFeatures.push(feature);
+    }
+  });
+
+  // ※圏外エリアの自動塗り分けは行わない（リスト表示のみ。
+  //   ユーザーが気になる町丁目をクリックした時だけ selectTown() でハイライトする）
+
+  insideNames.sort((a, b) => a.display.localeCompare(b.display, 'ja'));
+  outsideNames.sort((a, b) => a.display.localeCompare(b.display, 'ja'));
+
+  if (insideNames.length === 0 && outsideNames.length === 0) {
+    listArea.innerHTML = '<span style="color:#999;">該当する町丁目が見つかりませんでした。</span>';
+    return;
+  }
+
+  let html = '';
+  if (insideNames.length > 0) {
+    html += '<div style="color:#555;margin-bottom:4px;">徒歩圏内：' + insideNames.length + '件</div>';
+    html += insideNames.map(o =>
+      '<div style="padding:2px 0;"><span style="color:#444;">・ </span>' +
+      '<span class="tram-chome-link" data-name="' + o.raw + '" style="cursor:pointer;color:#1565C0;text-decoration:underline;">' + o.display + '</span></div>'
+    ).join('');
+  }
+  if (outsideNames.length > 0) {
+    html += '<div style="margin-top:8px;padding-top:6px;border-top:1px dashed #ccc;">' +
+      '<div style="font-weight:bold;color:#e91e8c;margin-bottom:3px;">🚫 圏外（800m圏内・標高差30m超）</div>' +
+      outsideNames.map(o =>
+        '<div style="padding:2px 0;"><span style="color:#bbb;">・ </span>' +
+        '<span class="tram-chome-link" data-name="' + o.raw + '" style="cursor:pointer;color:#c2185b;text-decoration:underline;">' + o.display + '</span></div>'
+      ).join('') + '</div>';
+  }
+  listArea.innerHTML = html;
+
+  listArea.querySelectorAll('.tram-chome-link').forEach(el => {
+    el.addEventListener('click', () => highlightChomeGently(el.getAttribute('data-name')));
+  });
+}
+
+function tramMajorityRatioCounts(ring, judgeRingElev, judgeRing800) {
+  let minLon = Infinity, maxLon = -Infinity, minLat = Infinity, maxLat = -Infinity;
+  for (let i = 0; i < ring.length; i++) {
+    const lon = ring[i][0], lat = ring[i][1];
+    if (lon < minLon) minLon = lon; if (lon > maxLon) maxLon = lon;
+    if (lat < minLat) minLat = lat; if (lat > maxLat) maxLat = lat;
+  }
+  let inChome = 0, inElev = 0, in800 = 0;
+  for (let glat = minLat + TRAM_GRID_STEP / 2; glat < maxLat; glat += TRAM_GRID_STEP) {
+    for (let glon = minLon + TRAM_GRID_STEP / 2; glon < maxLon; glon += TRAM_GRID_STEP) {
+      if (tramPointInPolygon(glon, glat, ring)) {
+        inChome++;
+        if (tramPointInPolygon(glon, glat, judgeRingElev)) inElev++;
+        if (tramPointInPolygon(glon, glat, judgeRing800)) in800++;
+      }
+    }
+  }
+  return { inChome, inElev, in800 };
+}
+
+
+const NODOT_MAP = {
+  "三原": "三原一丁目",
+  "京泊": "京泊一丁目",
+  "城山台": "城山台二丁目",
+  "女の都": "女の都二丁目",
+  "愛宕": "愛宕四丁目",
+  "新小が倉": "新小が倉一丁目",
+  "星取": "星取一丁目",
+  "浜平": "浜平二丁目",
+  "滑石": "滑石四丁目",
+  "立山": "立山五丁目",
+  "赤迫": "赤迫二丁目",
+  "錦": "錦三丁目"
+};
+const POPULATION_DATA = {"本河内一丁目":{"y2022":526,"y2023":519,"y2024":510,"y2025":509,"diff":-17,"rate":-3.23},"本河内二丁目":{"y2022":659,"y2023":652,"y2024":628,"y2025":628,"diff":-31,"rate":-4.7},"本河内三丁目":{"y2022":1065,"y2023":1065,"y2024":1009,"y2025":998,"diff":-67,"rate":-6.29},"本河内四丁目":{"y2022":136,"y2023":133,"y2024":124,"y2025":120,"diff":-16,"rate":-11.76},"矢の平一丁目":{"y2022":496,"y2023":488,"y2024":491,"y2025":488,"diff":-8,"rate":-1.61},"矢の平二丁目":{"y2022":601,"y2023":614,"y2024":619,"y2025":591,"diff":-10,"rate":-1.66},"矢の平三丁目":{"y2022":296,"y2023":288,"y2024":284,"y2025":278,"diff":-18,"rate":-6.08},"矢の平四丁目":{"y2022":319,"y2023":327,"y2024":321,"y2025":317,"diff":-2,"rate":-0.63},"白木町":{"y2022":889,"y2023":874,"y2024":867,"y2025":840,"diff":-49,"rate":-5.51},"八つ尾町":{"y2022":1188,"y2023":1160,"y2024":1129,"y2025":1095,"diff":-93,"rate":-7.83},"中川一丁目":{"y2022":504,"y2023":471,"y2024":455,"y2025":486,"diff":-18,"rate":-3.57},"中川二丁目":{"y2022":535,"y2023":529,"y2024":521,"y2025":504,"diff":-31,"rate":-5.79},"新中川町":{"y2022":468,"y2023":459,"y2024":452,"y2025":444,"diff":-24,"rate":-5.13},"桜馬場一丁目":{"y2022":633,"y2023":626,"y2024":627,"y2025":607,"diff":-26,"rate":-4.11},"桜馬場二丁目":{"y2022":617,"y2023":605,"y2024":624,"y2025":601,"diff":-16,"rate":-2.59},"新大工町":{"y2022":768,"y2023":838,"y2024":871,"y2025":913,"diff":145,"rate":18.88},"伊勢町":{"y2022":354,"y2023":357,"y2024":358,"y2025":348,"diff":-6,"rate":-1.69},"伊良林一丁目":{"y2022":420,"y2023":419,"y2024":414,"y2025":406,"diff":-14,"rate":-3.33},"伊良林二丁目":{"y2022":451,"y2023":449,"y2024":441,"y2025":408,"diff":-43,"rate":-9.53},"伊良林三丁目":{"y2022":562,"y2023":584,"y2024":561,"y2025":545,"diff":-17,"rate":-3.02},"風頭町":{"y2022":831,"y2023":830,"y2024":810,"y2025":782,"diff":-49,"rate":-5.9},"彦見町":{"y2022":854,"y2023":831,"y2024":830,"y2025":811,"diff":-43,"rate":-5.04},"寺町":{"y2022":75,"y2023":63,"y2024":68,"y2025":57,"diff":-18,"rate":-24.0},"八幡町":{"y2022":807,"y2023":824,"y2024":799,"y2025":821,"diff":14,"rate":1.73},"麹屋町":{"y2022":668,"y2023":656,"y2024":674,"y2025":680,"diff":12,"rate":1.8},"出来大工町":{"y2022":433,"y2023":419,"y2024":471,"y2025":450,"diff":17,"rate":3.93},"馬町":{"y2022":652,"y2023":646,"y2024":630,"y2025":679,"diff":27,"rate":4.14},"炉粕町":{"y2022":169,"y2023":164,"y2024":173,"y2025":174,"diff":5,"rate":2.96},"勝山町":{"y2022":293,"y2023":316,"y2024":308,"y2025":513,"diff":220,"rate":75.09},"大井手町":{"y2022":197,"y2023":243,"y2024":245,"y2025":238,"diff":41,"rate":20.81},"今博多町":{"y2022":236,"y2023":221,"y2024":244,"y2025":245,"diff":9,"rate":3.81},"古町":{"y2022":368,"y2023":365,"y2024":328,"y2025":329,"diff":-39,"rate":-10.6},"桶屋町":{"y2022":349,"y2023":342,"y2024":346,"y2025":349,"diff":0,"rate":0.0},"諏訪町":{"y2022":755,"y2023":742,"y2024":748,"y2025":721,"diff":-34,"rate":-4.5},"魚の町":{"y2022":956,"y2023":1099,"y2024":1132,"y2025":1113,"diff":157,"rate":16.42},"栄町":{"y2022":196,"y2023":214,"y2024":216,"y2025":220,"diff":24,"rate":12.24},"古川町":{"y2022":363,"y2023":354,"y2024":346,"y2025":351,"diff":-12,"rate":-3.31},"銀屋町":{"y2022":318,"y2023":318,"y2024":306,"y2025":323,"diff":5,"rate":1.57},"東古川町":{"y2022":199,"y2023":192,"y2024":188,"y2025":172,"diff":-27,"rate":-13.57},"賑町":{"y2022":383,"y2023":386,"y2024":387,"y2025":384,"diff":1,"rate":0.26},"万屋町":{"y2022":746,"y2023":794,"y2024":839,"y2025":830,"diff":84,"rate":11.26},"築町":{"y2022":167,"y2023":174,"y2024":173,"y2025":182,"diff":15,"rate":8.98},"浜町":{"y2022":423,"y2023":418,"y2024":406,"y2025":422,"diff":-1,"rate":-0.24},"銅座町":{"y2022":335,"y2023":317,"y2024":324,"y2025":314,"diff":-21,"rate":-6.27},"鍛冶屋町":{"y2022":838,"y2023":848,"y2024":883,"y2025":871,"diff":33,"rate":3.94},"油屋町":{"y2022":687,"y2023":675,"y2024":723,"y2025":707,"diff":20,"rate":2.91},"高平町":{"y2022":512,"y2023":491,"y2024":487,"y2025":481,"diff":-31,"rate":-6.05},"愛宕一丁目":{"y2022":1079,"y2023":1061,"y2024":1036,"y2025":1034,"diff":-45,"rate":-4.17},"愛宕二丁目":{"y2022":627,"y2023":629,"y2024":606,"y2025":610,"diff":-17,"rate":-2.71},"愛宕三丁目":{"y2022":1068,"y2023":1041,"y2024":1036,"y2025":1040,"diff":-28,"rate":-2.62},"愛宕四丁目":{"y2022":640,"y2023":625,"y2024":642,"y2025":616,"diff":-24,"rate":-3.75},"弥生町":{"y2022":1104,"y2023":1104,"y2024":1090,"y2025":1067,"diff":-37,"rate":-3.35},"三景台町":{"y2022":975,"y2023":948,"y2024":949,"y2025":945,"diff":-30,"rate":-3.08},"東小島町":{"y2022":581,"y2023":581,"y2024":557,"y2025":555,"diff":-26,"rate":-4.48},"上小島一丁目":{"y2022":421,"y2023":410,"y2024":416,"y2025":431,"diff":10,"rate":2.38},"上小島二丁目":{"y2022":718,"y2023":712,"y2024":678,"y2025":661,"diff":-57,"rate":-7.94},"上小島三丁目":{"y2022":725,"y2023":723,"y2024":709,"y2025":691,"diff":-34,"rate":-4.69},"上小島四丁目":{"y2022":959,"y2023":913,"y2024":879,"y2025":871,"diff":-88,"rate":-9.18},"上小島五丁目":{"y2022":725,"y2023":707,"y2024":689,"y2025":676,"diff":-49,"rate":-6.76},"桜木町":{"y2022":576,"y2023":568,"y2024":566,"y2025":557,"diff":-19,"rate":-3.3},"出島町":{"y2022":861,"y2023":855,"y2024":819,"y2025":808,"diff":-53,"rate":-6.16},"江戸町":{"y2022":174,"y2023":174,"y2024":168,"y2025":158,"diff":-16,"rate":-9.2},"元船町":{"y2022":552,"y2023":533,"y2024":627,"y2025":627,"diff":75,"rate":13.59},"五島町":{"y2022":1012,"y2023":1034,"y2024":1109,"y2025":1115,"diff":103,"rate":10.18},"樺島町":{"y2022":733,"y2023":714,"y2024":702,"y2025":691,"diff":-42,"rate":-5.73},"万才町":{"y2022":581,"y2023":569,"y2024":578,"y2025":572,"diff":-9,"rate":-1.55},"金屋町":{"y2022":641,"y2023":614,"y2024":626,"y2025":615,"diff":-26,"rate":-4.06},"興善町":{"y2022":219,"y2023":207,"y2024":222,"y2025":221,"diff":2,"rate":0.91},"桜町":{"y2022":453,"y2023":439,"y2024":441,"y2025":460,"diff":7,"rate":1.55},"恵美須町":{"y2022":550,"y2023":547,"y2024":540,"y2025":649,"diff":99,"rate":18.0},"大黒町":{"y2022":224,"y2023":234,"y2024":259,"y2025":264,"diff":40,"rate":17.86},"尾上町":{"y2022":1,"y2023":0,"y2024":0,"y2025":9,"diff":8,"rate":800.0},"八千代町":{"y2022":70,"y2023":66,"y2024":64,"y2025":59,"diff":-11,"rate":-15.71},"御船蔵町":{"y2022":1264,"y2023":1243,"y2024":1247,"y2025":1251,"diff":-13,"rate":-1.03},"浜平一丁目":{"y2022":556,"y2023":542,"y2024":527,"y2025":516,"diff":-40,"rate":-7.19},"浜平二丁目":{"y2022":275,"y2023":277,"y2024":279,"y2025":265,"diff":-10,"rate":-3.64},"西坂町":{"y2022":598,"y2023":596,"y2024":570,"y2025":557,"diff":-41,"rate":-6.86},"中町":{"y2022":456,"y2023":447,"y2024":449,"y2025":433,"diff":-23,"rate":-5.04},"上町":{"y2022":494,"y2023":479,"y2024":469,"y2025":563,"diff":69,"rate":13.97},"筑後町":{"y2022":949,"y2023":934,"y2024":940,"y2025":959,"diff":10,"rate":1.05},"玉園町":{"y2022":421,"y2023":408,"y2024":411,"y2025":412,"diff":-9,"rate":-2.14},"八百屋町":{"y2022":121,"y2023":125,"y2024":121,"y2025":122,"diff":1,"rate":0.83},"立山一丁目":{"y2022":313,"y2023":297,"y2024":286,"y2025":289,"diff":-24,"rate":-7.67},"立山二丁目":{"y2022":345,"y2023":317,"y2024":322,"y2025":305,"diff":-40,"rate":-11.59},"立山三丁目":{"y2022":311,"y2023":308,"y2024":288,"y2025":282,"diff":-29,"rate":-9.32},"立山四丁目":{"y2022":485,"y2023":467,"y2024":461,"y2025":436,"diff":-49,"rate":-10.1},"立山五丁目":{"y2022":480,"y2023":467,"y2024":457,"y2025":445,"diff":-35,"rate":-7.29},"上西山町":{"y2022":611,"y2023":608,"y2024":591,"y2025":560,"diff":-51,"rate":-8.35},"下西山町":{"y2022":420,"y2023":400,"y2024":407,"y2025":403,"diff":-17,"rate":-4.05},"西山本町":{"y2022":908,"y2023":881,"y2024":849,"y2025":802,"diff":-106,"rate":-11.67},"西山一丁目":{"y2022":799,"y2023":785,"y2024":778,"y2025":737,"diff":-62,"rate":-7.76},"西山二丁目":{"y2022":1039,"y2023":1029,"y2024":986,"y2025":983,"diff":-56,"rate":-5.39},"西山三丁目":{"y2022":965,"y2023":954,"y2024":933,"y2025":941,"diff":-24,"rate":-2.49},"西山四丁目":{"y2022":838,"y2023":839,"y2024":822,"y2025":802,"diff":-36,"rate":-4.3},"西山台一丁目":{"y2022":748,"y2023":733,"y2024":732,"y2025":684,"diff":-64,"rate":-8.56},"西山台二丁目":{"y2022":993,"y2023":983,"y2024":946,"y2025":930,"diff":-63,"rate":-6.34},"片淵一丁目":{"y2022":464,"y2023":450,"y2024":495,"y2025":506,"diff":42,"rate":9.05},"片淵二丁目":{"y2022":645,"y2023":611,"y2024":617,"y2025":606,"diff":-39,"rate":-6.05},"片淵三丁目":{"y2022":749,"y2023":732,"y2024":733,"y2025":709,"diff":-40,"rate":-5.34},"片淵四丁目":{"y2022":708,"y2023":672,"y2024":655,"y2025":648,"diff":-60,"rate":-8.47},"片淵五丁目":{"y2022":861,"y2023":833,"y2024":802,"y2025":767,"diff":-94,"rate":-10.92},"夫婦川町":{"y2022":553,"y2023":543,"y2024":537,"y2025":521,"diff":-32,"rate":-5.79},"鳴滝一丁目":{"y2022":767,"y2023":740,"y2024":739,"y2025":714,"diff":-53,"rate":-6.91},"鳴滝二丁目":{"y2022":567,"y2023":553,"y2024":548,"y2025":519,"diff":-48,"rate":-8.47},"鳴滝三丁目":{"y2022":391,"y2023":386,"y2024":370,"y2025":363,"diff":-28,"rate":-7.16},"木場町":{"y2022":268,"y2023":263,"y2024":254,"y2025":248,"diff":-20,"rate":-7.46},"宝栄町":{"y2022":899,"y2023":914,"y2024":913,"y2025":917,"diff":18,"rate":2.0},"岩見町":{"y2022":1694,"y2023":1695,"y2024":1665,"y2025":1695,"diff":1,"rate":0.06},"春木町":{"y2022":1089,"y2023":1060,"y2024":1057,"y2025":1087,"diff":-2,"rate":-0.18},"竹の久保町":{"y2022":774,"y2023":777,"y2024":758,"y2025":762,"diff":-12,"rate":-1.55},"梁川町":{"y2022":1063,"y2023":1039,"y2024":1042,"y2025":1045,"diff":-18,"rate":-1.69},"淵町":{"y2022":541,"y2023":546,"y2024":525,"y2025":516,"diff":-25,"rate":-4.62},"稲佐町":{"y2022":1328,"y2023":1305,"y2024":1271,"y2025":1247,"diff":-81,"rate":-6.1},"光町":{"y2022":393,"y2023":383,"y2024":359,"y2025":339,"diff":-54,"rate":-13.74},"曙町":{"y2022":1169,"y2023":1169,"y2024":1164,"y2025":1161,"diff":-8,"rate":-0.68},"弁天町":{"y2022":476,"y2023":470,"y2024":467,"y2025":456,"diff":-20,"rate":-4.2},"旭町":{"y2022":1277,"y2023":1256,"y2024":1454,"y2025":1416,"diff":139,"rate":10.88},"江の浦町":{"y2022":669,"y2023":651,"y2024":628,"y2025":596,"diff":-73,"rate":-10.91},"平戸小屋町":{"y2022":603,"y2023":581,"y2024":569,"y2025":541,"diff":-62,"rate":-10.28},"大鳥町":{"y2022":683,"y2023":670,"y2024":656,"y2025":651,"diff":-32,"rate":-4.69},"丸尾町":{"y2022":104,"y2023":104,"y2024":107,"y2025":107,"diff":3,"rate":2.88},"水の浦町":{"y2022":379,"y2023":367,"y2024":360,"y2025":348,"diff":-31,"rate":-8.18},"大谷町":{"y2022":486,"y2023":459,"y2024":433,"y2025":427,"diff":-59,"rate":-12.14},"飽の浦町":{"y2022":338,"y2023":325,"y2024":307,"y2025":307,"diff":-31,"rate":-9.17},"秋月町":{"y2022":632,"y2023":604,"y2024":577,"y2025":564,"diff":-68,"rate":-10.76},"入船町":{"y2022":817,"y2023":790,"y2024":786,"y2025":761,"diff":-56,"rate":-6.85},"塩浜町":{"y2022":168,"y2023":162,"y2024":156,"y2025":150,"diff":-18,"rate":-10.71},"岩瀬道町":{"y2022":167,"y2023":167,"y2024":167,"y2025":162,"diff":-5,"rate":-2.99},"東立神町":{"y2022":383,"y2023":376,"y2024":355,"y2025":339,"diff":-44,"rate":-11.49},"西立神町":{"y2022":296,"y2023":282,"y2024":270,"y2025":257,"diff":-39,"rate":-13.18},"西泊町":{"y2022":283,"y2023":271,"y2024":262,"y2025":255,"diff":-28,"rate":-9.89},"小江原一丁目":{"y2022":1325,"y2023":1312,"y2024":1293,"y2025":1300,"diff":-25,"rate":-1.89},"小江原二丁目":{"y2022":1656,"y2023":1613,"y2024":1536,"y2025":1466,"diff":-190,"rate":-11.47},"小江原三丁目":{"y2022":1182,"y2023":1159,"y2024":1147,"y2025":1135,"diff":-47,"rate":-3.98},"小江原四丁目":{"y2022":2261,"y2023":2161,"y2024":2103,"y2025":2052,"diff":-209,"rate":-9.24},"小江原五丁目":{"y2022":948,"y2023":957,"y2024":915,"y2025":915,"diff":-33,"rate":-3.48},"船大工町":{"y2022":137,"y2023":133,"y2024":126,"y2025":120,"diff":-17,"rate":-12.41},"本石灰町":{"y2022":173,"y2023":158,"y2024":151,"y2025":156,"diff":-17,"rate":-9.83},"丸山町":{"y2022":742,"y2023":727,"y2024":725,"y2025":701,"diff":-41,"rate":-5.53},"寄合町":{"y2022":542,"y2023":528,"y2024":576,"y2025":640,"diff":98,"rate":18.08},"中小島一丁目":{"y2022":439,"y2023":436,"y2024":431,"y2025":426,"diff":-13,"rate":-2.96},"中小島二丁目":{"y2022":837,"y2023":808,"y2024":774,"y2025":765,"diff":-72,"rate":-8.6},"西小島一丁目":{"y2022":314,"y2023":314,"y2024":318,"y2025":294,"diff":-20,"rate":-6.37},"西小島二丁目":{"y2022":622,"y2023":596,"y2024":578,"y2025":583,"diff":-39,"rate":-6.27},"館内町":{"y2022":446,"y2023":434,"y2024":427,"y2025":419,"diff":-27,"rate":-6.05},"稲田町":{"y2022":587,"y2023":593,"y2024":567,"y2025":539,"diff":-48,"rate":-8.18},"中新町":{"y2022":573,"y2023":574,"y2024":564,"y2025":554,"diff":-19,"rate":-3.32},"十人町":{"y2022":574,"y2023":560,"y2024":569,"y2025":571,"diff":-3,"rate":-0.52},"籠町":{"y2022":430,"y2023":456,"y2024":427,"y2025":490,"diff":60,"rate":13.95},"新地町":{"y2022":357,"y2023":345,"y2024":344,"y2025":345,"diff":-12,"rate":-3.36},"梅香崎町":{"y2022":206,"y2023":197,"y2024":190,"y2025":198,"diff":-8,"rate":-3.88},"常盤町":{"y2022":3,"y2023":3,"y2024":2,"y2025":58,"diff":55,"rate":1833.33},"相生町":{"y2022":445,"y2023":417,"y2024":434,"y2025":435,"diff":-10,"rate":-2.25},"大浦町":{"y2022":1635,"y2023":1691,"y2024":1703,"y2025":1731,"diff":96,"rate":5.87},"東山手町":{"y2022":343,"y2023":348,"y2024":341,"y2025":324,"diff":-19,"rate":-5.54},"下町":{"y2022":189,"y2023":187,"y2024":171,"y2025":181,"diff":-8,"rate":-4.23},"東山町":{"y2022":327,"y2023":326,"y2024":306,"y2025":305,"diff":-22,"rate":-6.73},"大浦東町":{"y2022":205,"y2023":203,"y2024":199,"y2025":203,"diff":-2,"rate":-0.98},"日の出町":{"y2022":534,"y2023":514,"y2024":493,"y2025":481,"diff":-53,"rate":-9.93},"元町":{"y2022":248,"y2023":233,"y2024":220,"y2025":209,"diff":-39,"rate":-15.73},"川上町":{"y2022":778,"y2023":738,"y2024":747,"y2025":729,"diff":-49,"rate":-6.3},"椎の木町":{"y2022":732,"y2023":716,"y2024":702,"y2025":663,"diff":-69,"rate":-9.43},"高丘一丁目":{"y2022":253,"y2023":249,"y2024":240,"y2025":225,"diff":-28,"rate":-11.07},"高丘二丁目":{"y2022":312,"y2023":311,"y2024":310,"y2025":302,"diff":-10,"rate":-3.21},"南町":{"y2022":420,"y2023":404,"y2024":390,"y2025":381,"diff":-39,"rate":-9.29},"南が丘町":{"y2022":594,"y2023":573,"y2024":559,"y2025":548,"diff":-46,"rate":-7.74},"八景町":{"y2022":661,"y2023":654,"y2024":640,"y2025":669,"diff":8,"rate":1.21},"星取一丁目":{"y2022":283,"y2023":288,"y2024":287,"y2025":264,"diff":-19,"rate":-6.71},"星取二丁目":{"y2022":372,"y2023":353,"y2024":322,"y2025":318,"diff":-54,"rate":-14.52},"出雲一丁目":{"y2022":707,"y2023":696,"y2024":685,"y2025":691,"diff":-16,"rate":-2.26},"出雲二丁目":{"y2022":411,"y2023":407,"y2024":387,"y2025":361,"diff":-50,"rate":-12.17},"出雲三丁目":{"y2022":330,"y2023":332,"y2024":328,"y2025":307,"diff":-23,"rate":-6.97},"上田町":{"y2022":383,"y2023":372,"y2024":356,"y2025":339,"diff":-44,"rate":-11.49},"南山手町":{"y2022":455,"y2023":418,"y2024":429,"y2025":413,"diff":-42,"rate":-9.23},"松が枝町":{"y2022":258,"y2023":298,"y2024":303,"y2025":396,"diff":138,"rate":53.49},"小曽根町":{"y2022":88,"y2023":80,"y2024":69,"y2025":72,"diff":-16,"rate":-18.18},"浪の平町":{"y2022":147,"y2023":139,"y2024":129,"y2025":127,"diff":-20,"rate":-13.61},"古河町":{"y2022":82,"y2023":81,"y2024":74,"y2025":78,"diff":-4,"rate":-4.88},"東琴平一丁目":{"y2022":264,"y2023":260,"y2024":257,"y2025":254,"diff":-10,"rate":-3.79},"東琴平二丁目":{"y2022":142,"y2023":142,"y2024":132,"y2025":129,"diff":-13,"rate":-9.15},"西琴平町":{"y2022":301,"y2023":290,"y2024":284,"y2025":277,"diff":-24,"rate":-7.97},"国分町":{"y2022":280,"y2023":272,"y2024":263,"y2025":258,"diff":-22,"rate":-7.86},"小菅町":{"y2022":1485,"y2023":1444,"y2024":1419,"y2025":1399,"diff":-86,"rate":-5.79},"戸町一丁目":{"y2022":1778,"y2023":1775,"y2024":1740,"y2025":1698,"diff":-80,"rate":-4.5},"戸町二丁目":{"y2022":1751,"y2023":1692,"y2024":1659,"y2025":1611,"diff":-140,"rate":-8.0},"戸町三丁目":{"y2022":667,"y2023":627,"y2024":614,"y2025":585,"diff":-82,"rate":-12.29},"戸町四丁目":{"y2022":663,"y2023":637,"y2024":622,"y2025":699,"diff":36,"rate":5.43},"戸町五丁目":{"y2022":17,"y2023":14,"y2024":13,"y2025":11,"diff":-6,"rate":-35.29},"上戸町":{"y2022":86,"y2023":82,"y2024":80,"y2025":85,"diff":-1,"rate":-1.16},"上戸町一丁目":{"y2022":722,"y2023":710,"y2024":705,"y2025":697,"diff":-25,"rate":-3.46},"上戸町二丁目":{"y2022":841,"y2023":819,"y2024":798,"y2025":780,"diff":-61,"rate":-7.25},"上戸町三丁目":{"y2022":494,"y2023":475,"y2024":464,"y2025":479,"diff":-15,"rate":-3.04},"上戸町四丁目":{"y2022":622,"y2023":648,"y2024":641,"y2025":602,"diff":-20,"rate":-3.22},"新戸町一丁目":{"y2022":1068,"y2023":1050,"y2024":1009,"y2025":977,"diff":-91,"rate":-8.52},"新戸町二丁目":{"y2022":679,"y2023":653,"y2024":631,"y2025":605,"diff":-74,"rate":-10.9},"新戸町三丁目":{"y2022":1204,"y2023":1176,"y2024":1143,"y2025":1125,"diff":-79,"rate":-6.56},"新戸町四丁目":{"y2022":901,"y2023":911,"y2024":900,"y2025":900,"diff":-1,"rate":-0.11},"宝町":{"y2022":558,"y2023":602,"y2024":636,"y2025":643,"diff":85,"rate":15.23},"幸町":{"y2022":111,"y2023":95,"y2024":102,"y2025":102,"diff":-9,"rate":-8.11},"天神町":{"y2022":516,"y2023":504,"y2024":494,"y2025":470,"diff":-46,"rate":-8.91},"銭座町":{"y2022":808,"y2023":776,"y2024":767,"y2025":739,"diff":-69,"rate":-8.54},"上銭座町":{"y2022":376,"y2023":384,"y2024":416,"y2025":409,"diff":33,"rate":8.78},"緑町":{"y2022":328,"y2023":341,"y2024":346,"y2025":333,"diff":5,"rate":1.52},"茂里町":{"y2022":406,"y2023":418,"y2024":412,"y2025":412,"diff":6,"rate":1.48},"目覚町":{"y2022":992,"y2023":970,"y2024":954,"y2025":973,"diff":-19,"rate":-1.92},"岩川町":{"y2022":1023,"y2023":996,"y2024":990,"y2025":1002,"diff":-21,"rate":-2.05},"川口町":{"y2022":1181,"y2023":1257,"y2024":1312,"y2025":1395,"diff":214,"rate":18.12},"浜口町":{"y2022":858,"y2023":872,"y2024":882,"y2025":862,"diff":4,"rate":0.47},"平野町":{"y2022":1760,"y2023":1760,"y2024":1729,"y2025":1712,"diff":-48,"rate":-2.73},"平和町":{"y2022":1719,"y2023":1685,"y2024":1617,"y2025":1643,"diff":-76,"rate":-4.42},"坂本一丁目":{"y2022":781,"y2023":793,"y2024":821,"y2025":844,"diff":63,"rate":8.07},"坂本二丁目":{"y2022":735,"y2023":713,"y2024":680,"y2025":660,"diff":-75,"rate":-10.2},"坂本三丁目":{"y2022":441,"y2023":435,"y2024":421,"y2025":419,"diff":-22,"rate":-4.99},"松山町":{"y2022":298,"y2023":282,"y2024":275,"y2025":268,"diff":-30,"rate":-10.07},"岡町":{"y2022":552,"y2023":549,"y2024":528,"y2025":523,"diff":-29,"rate":-5.25},"橋口町":{"y2022":1228,"y2023":1217,"y2024":1224,"y2025":1187,"diff":-41,"rate":-3.34},"上野町":{"y2022":963,"y2023":941,"y2024":950,"y2025":942,"diff":-21,"rate":-2.18},"本原町":{"y2022":1988,"y2023":1992,"y2024":2022,"y2025":1938,"diff":-50,"rate":-2.52},"扇町":{"y2022":1622,"y2023":1588,"y2024":1586,"y2025":1595,"diff":-27,"rate":-1.66},"石神町":{"y2022":1947,"y2023":1888,"y2024":1876,"y2025":1858,"diff":-89,"rate":-4.57},"辻町":{"y2022":1399,"y2023":1392,"y2024":1361,"y2025":1302,"diff":-97,"rate":-6.93},"小峰町":{"y2022":1898,"y2023":1868,"y2024":1845,"y2025":1767,"diff":-131,"rate":-6.9},"三原一丁目":{"y2022":2643,"y2023":2576,"y2024":2539,"y2025":2504,"diff":-139,"rate":-5.26},"三原二丁目":{"y2022":2246,"y2023":2233,"y2024":2178,"y2025":2135,"diff":-111,"rate":-4.94},"三原三丁目":{"y2022":396,"y2023":372,"y2024":361,"y2025":348,"diff":-48,"rate":-12.12},"高尾町":{"y2022":1476,"y2023":1452,"y2024":1400,"y2025":1373,"diff":-103,"rate":-6.98},"本尾町":{"y2022":1235,"y2023":1202,"y2024":1190,"y2025":1190,"diff":-45,"rate":-3.64},"江平一丁目":{"y2022":783,"y2023":780,"y2024":774,"y2025":754,"diff":-29,"rate":-3.7},"江平二丁目":{"y2022":445,"y2023":420,"y2024":393,"y2025":390,"diff":-55,"rate":-12.36},"江平三丁目":{"y2022":500,"y2023":496,"y2024":480,"y2025":474,"diff":-26,"rate":-5.2},"大橋町":{"y2022":1643,"y2023":1623,"y2024":1622,"y2025":1590,"diff":-53,"rate":-3.23},"城栄町":{"y2022":1679,"y2023":1734,"y2024":1808,"y2025":1765,"diff":86,"rate":5.12},"青山町":{"y2022":1999,"y2023":1940,"y2024":1903,"y2025":1864,"diff":-135,"rate":-6.75},"若草町":{"y2022":1136,"y2023":1117,"y2024":1092,"y2025":1051,"diff":-85,"rate":-7.48},"金堀町":{"y2022":1529,"y2023":1491,"y2024":1472,"y2025":1439,"diff":-90,"rate":-5.89},"城山台一丁目":{"y2022":1668,"y2023":1640,"y2024":1604,"y2025":1588,"diff":-80,"rate":-4.8},"城山台二丁目":{"y2022":999,"y2023":1002,"y2024":989,"y2025":968,"diff":-31,"rate":-3.1},"花園町":{"y2022":1056,"y2023":1074,"y2024":1030,"y2025":1040,"diff":-16,"rate":-1.52},"立岩町":{"y2022":1260,"y2023":1275,"y2024":1275,"y2025":1224,"diff":-36,"rate":-2.86},"富士見町":{"y2022":1562,"y2023":1546,"y2024":1520,"y2025":1500,"diff":-62,"rate":-3.97},"城山町":{"y2022":1642,"y2023":1651,"y2024":1632,"y2025":1627,"diff":-15,"rate":-0.91},"新小が倉一丁目":{"y2022":416,"y2023":411,"y2024":420,"y2025":424,"diff":8,"rate":1.92},"新小が倉二丁目":{"y2022":384,"y2023":378,"y2024":378,"y2025":356,"diff":-28,"rate":-7.29},"小ケ倉町一丁目":{"y2022":412,"y2023":422,"y2024":414,"y2025":390,"diff":-22,"rate":-5.34},"小ケ倉町二丁目":{"y2022":1870,"y2023":1812,"y2024":1777,"y2025":1759,"diff":-111,"rate":-5.94},"小ケ倉町三丁目":{"y2022":472,"y2023":484,"y2024":475,"y2025":466,"diff":-6,"rate":-1.27},"大山町":{"y2022":170,"y2023":169,"y2024":162,"y2025":158,"diff":-12,"rate":-7.06},"ダイヤランド一丁目":{"y2022":1024,"y2023":987,"y2024":979,"y2025":973,"diff":-51,"rate":-4.98},"ダイヤランド二丁目":{"y2022":1286,"y2023":1273,"y2024":1246,"y2025":1219,"diff":-67,"rate":-5.21},"ダイヤランド三丁目":{"y2022":1359,"y2023":1346,"y2024":1295,"y2025":1292,"diff":-67,"rate":-4.93},"ダイヤランド四丁目":{"y2022":1027,"y2023":1000,"y2024":960,"y2025":936,"diff":-91,"rate":-8.86},"木鉢町一丁目":{"y2022":496,"y2023":485,"y2024":471,"y2025":461,"diff":-35,"rate":-7.06},"木鉢町二丁目":{"y2022":976,"y2023":964,"y2024":967,"y2025":947,"diff":-29,"rate":-2.97},"みなと坂一丁目":{"y2022":1770,"y2023":1792,"y2024":1814,"y2025":1809,"diff":39,"rate":2.2},"みなと坂二丁目":{"y2022":1601,"y2023":1619,"y2024":1603,"y2025":1618,"diff":17,"rate":1.06},"小瀬戸町":{"y2022":1104,"y2023":1093,"y2024":1099,"y2025":1126,"diff":22,"rate":1.99},"神ノ島町一丁目":{"y2022":579,"y2023":558,"y2024":547,"y2025":545,"diff":-34,"rate":-5.87},"神ノ島町二丁目":{"y2022":256,"y2023":259,"y2024":250,"y2025":248,"diff":-8,"rate":-3.12},"神ノ島町三丁目":{"y2022":107,"y2023":104,"y2024":100,"y2025":96,"diff":-11,"rate":-10.28},"岩屋町":{"y2022":2407,"y2023":2352,"y2024":2340,"y2025":2326,"diff":-81,"rate":-3.37},"住吉町":{"y2022":1419,"y2023":1431,"y2024":1404,"y2025":1388,"diff":-31,"rate":-2.18},"住吉台町":{"y2022":333,"y2023":341,"y2024":333,"y2025":330,"diff":-3,"rate":-0.9},"中園町":{"y2022":1091,"y2023":1064,"y2024":1073,"y2025":1163,"diff":72,"rate":6.6},"若葉町":{"y2022":517,"y2023":506,"y2024":508,"y2025":487,"diff":-30,"rate":-5.8},"家野町":{"y2022":1203,"y2023":1214,"y2024":1167,"y2025":1153,"diff":-50,"rate":-4.16},"千歳町":{"y2022":1712,"y2023":1652,"y2024":1615,"y2025":1598,"diff":-114,"rate":-6.66},"花丘町":{"y2022":1304,"y2023":1282,"y2024":1261,"y2025":1286,"diff":-18,"rate":-1.38},"泉町":{"y2022":37,"y2023":41,"y2024":41,"y2025":39,"diff":2,"rate":5.41},"泉一丁目":{"y2022":1541,"y2023":1513,"y2024":1487,"y2025":1440,"diff":-101,"rate":-6.55},"泉二丁目":{"y2022":1797,"y2023":1776,"y2024":1751,"y2025":1704,"diff":-93,"rate":-5.18},"泉三丁目":{"y2022":714,"y2023":694,"y2024":680,"y2025":669,"diff":-45,"rate":-6.3},"文教町":{"y2022":1190,"y2023":1145,"y2024":1180,"y2025":1214,"diff":24,"rate":2.02},"赤迫一丁目":{"y2022":1568,"y2023":1577,"y2024":1544,"y2025":1533,"diff":-35,"rate":-2.23},"赤迫二丁目":{"y2022":1203,"y2023":1223,"y2024":1356,"y2025":1392,"diff":189,"rate":15.71},"赤迫三丁目":{"y2022":963,"y2023":951,"y2024":973,"y2025":977,"diff":14,"rate":1.45},"西北町":{"y2022":1907,"y2023":1892,"y2024":1867,"y2025":1859,"diff":-48,"rate":-2.52},"若竹町":{"y2022":1441,"y2023":1414,"y2024":1375,"y2025":1326,"diff":-115,"rate":-7.98},"柳谷町":{"y2022":1082,"y2023":1077,"y2024":1092,"y2025":1117,"diff":35,"rate":3.23},"錦一丁目":{"y2022":504,"y2023":484,"y2024":461,"y2025":433,"diff":-71,"rate":-14.09},"錦二丁目":{"y2022":802,"y2023":780,"y2024":762,"y2025":734,"diff":-68,"rate":-8.48},"錦三丁目":{"y2022":655,"y2023":652,"y2024":620,"y2025":608,"diff":-47,"rate":-7.18},"音無町":{"y2022":1018,"y2023":1015,"y2024":1001,"y2025":984,"diff":-34,"rate":-3.34},"西町":{"y2022":1411,"y2023":1408,"y2024":1385,"y2025":1342,"diff":-69,"rate":-4.89},"白鳥町":{"y2022":859,"y2023":848,"y2024":841,"y2025":820,"diff":-39,"rate":-4.54},"清水町":{"y2022":1434,"y2023":1398,"y2024":1396,"y2025":1414,"diff":-20,"rate":-1.39},"緑が丘町":{"y2022":526,"y2023":530,"y2024":510,"y2025":493,"diff":-33,"rate":-6.27},"江里町":{"y2022":1351,"y2023":1325,"y2024":1290,"y2025":1299,"diff":-52,"rate":-3.85},"三芳町":{"y2022":1439,"y2023":1447,"y2024":1406,"y2025":1364,"diff":-75,"rate":-5.21},"油木町":{"y2022":2710,"y2023":2658,"y2024":2576,"y2025":2538,"diff":-172,"rate":-6.35},"昭和一丁目":{"y2022":637,"y2023":615,"y2024":586,"y2025":573,"diff":-64,"rate":-10.05},"昭和二丁目":{"y2022":811,"y2023":836,"y2024":858,"y2025":869,"diff":58,"rate":7.15},"昭和三丁目":{"y2022":880,"y2023":844,"y2024":809,"y2025":810,"diff":-70,"rate":-7.95},"女の都一丁目":{"y2022":539,"y2023":542,"y2024":531,"y2025":527,"diff":-12,"rate":-2.23},"女の都二丁目":{"y2022":1251,"y2023":1235,"y2024":1217,"y2025":1207,"diff":-44,"rate":-3.52},"女の都三丁目":{"y2022":940,"y2023":920,"y2024":914,"y2025":897,"diff":-43,"rate":-4.57},"女の都四丁目":{"y2022":1402,"y2023":1367,"y2024":1340,"y2025":1303,"diff":-99,"rate":-7.06},"大手一丁目":{"y2022":1060,"y2023":1022,"y2024":1024,"y2025":999,"diff":-61,"rate":-5.75},"大手二丁目":{"y2022":1250,"y2023":1238,"y2024":1215,"y2025":1208,"diff":-42,"rate":-3.36},"大手三丁目":{"y2022":487,"y2023":484,"y2024":458,"y2025":454,"diff":-33,"rate":-6.78},"三川町":{"y2022":1840,"y2023":1783,"y2024":1766,"y2025":1741,"diff":-99,"rate":-5.38},"川平町":{"y2022":2297,"y2023":2262,"y2024":2169,"y2025":2106,"diff":-191,"rate":-8.32},"けやき台町":{"y2022":804,"y2023":781,"y2024":767,"y2025":752,"diff":-52,"rate":-6.47},"三ツ山町":{"y2022":824,"y2023":807,"y2024":783,"y2025":763,"diff":-61,"rate":-7.4},"畦別当町":{"y2022":54,"y2023":52,"y2024":45,"y2025":43,"diff":-11,"rate":-20.37},"滑石一丁目":{"y2022":1770,"y2023":1753,"y2024":1713,"y2025":1673,"diff":-97,"rate":-5.48},"滑石二丁目":{"y2022":2115,"y2023":2061,"y2024":2040,"y2025":2016,"diff":-99,"rate":-4.68},"滑石三丁目":{"y2022":2599,"y2023":2518,"y2024":2445,"y2025":2413,"diff":-186,"rate":-7.16},"滑石四丁目":{"y2022":2094,"y2023":2077,"y2024":2040,"y2025":1973,"diff":-121,"rate":-5.78},"滑石五丁目":{"y2022":1847,"y2023":1847,"y2024":1811,"y2025":1957,"diff":110,"rate":5.96},"滑石六丁目":{"y2022":1837,"y2023":1772,"y2024":1773,"y2025":1743,"diff":-94,"rate":-5.12},"大園町":{"y2022":2622,"y2023":2582,"y2024":2521,"y2025":2471,"diff":-151,"rate":-5.76},"大宮町":{"y2022":859,"y2023":834,"y2024":816,"y2025":817,"diff":-42,"rate":-4.89},"北栄町":{"y2022":1135,"y2023":1123,"y2024":1109,"y2025":1090,"diff":-45,"rate":-3.96},"北陽町":{"y2022":1168,"y2023":1154,"y2024":1152,"y2025":1116,"diff":-52,"rate":-4.45},"虹が丘町":{"y2022":1391,"y2023":1370,"y2024":1361,"y2025":1338,"diff":-53,"rate":-3.81},"横尾一丁目":{"y2022":606,"y2023":606,"y2024":585,"y2025":554,"diff":-52,"rate":-8.58},"横尾二丁目":{"y2022":1142,"y2023":1118,"y2024":1089,"y2025":1047,"diff":-95,"rate":-8.32},"横尾三丁目":{"y2022":1674,"y2023":1665,"y2024":1682,"y2025":1616,"diff":-58,"rate":-3.46},"横尾四丁目":{"y2022":630,"y2023":620,"y2024":619,"y2025":612,"diff":-18,"rate":-2.86},"横尾五丁目":{"y2022":1131,"y2023":1078,"y2024":1033,"y2025":994,"diff":-137,"rate":-12.11},"葉山一丁目":{"y2022":2078,"y2023":2053,"y2024":2038,"y2025":2089,"diff":11,"rate":0.53},"葉山二丁目":{"y2022":1466,"y2023":1462,"y2024":1435,"y2025":1386,"diff":-80,"rate":-5.46},"エミネント葉山町":{"y2022":872,"y2023":862,"y2024":840,"y2025":833,"diff":-39,"rate":-4.47},"大浜町":{"y2022":4054,"y2023":4032,"y2024":3932,"y2025":3894,"diff":-160,"rate":-3.95},"小浦町":{"y2022":1783,"y2023":1773,"y2024":1746,"y2025":1719,"diff":-64,"rate":-3.59},"福田本町":{"y2022":1501,"y2023":1473,"y2024":1476,"y2025":1449,"diff":-52,"rate":-3.46},"小江町":{"y2022":460,"y2023":449,"y2024":435,"y2025":434,"diff":-26,"rate":-5.65},"柿泊町":{"y2022":533,"y2023":524,"y2024":503,"y2025":484,"diff":-49,"rate":-9.19},"手熊町":{"y2022":303,"y2023":294,"y2024":298,"y2025":289,"diff":-14,"rate":-4.62},"上浦町":{"y2022":124,"y2023":120,"y2024":116,"y2025":116,"diff":-8,"rate":-6.45},"茂木町":{"y2022":3127,"y2023":3024,"y2024":2979,"y2025":2896,"diff":-231,"rate":-7.39},"田上一丁目":{"y2022":769,"y2023":750,"y2024":744,"y2025":721,"diff":-48,"rate":-6.24},"田上二丁目":{"y2022":677,"y2023":657,"y2024":632,"y2025":628,"diff":-49,"rate":-7.24},"田上三丁目":{"y2022":927,"y2023":888,"y2024":885,"y2025":860,"diff":-67,"rate":-7.23},"田上四丁目":{"y2022":732,"y2023":726,"y2024":703,"y2025":679,"diff":-53,"rate":-7.24},"早坂町":{"y2022":231,"y2023":225,"y2024":214,"y2025":211,"diff":-20,"rate":-8.66},"北浦町":{"y2022":817,"y2023":805,"y2024":807,"y2025":783,"diff":-34,"rate":-4.16},"飯香浦町":{"y2022":529,"y2023":499,"y2024":482,"y2025":476,"diff":-53,"rate":-10.02},"太田尾町":{"y2022":343,"y2023":332,"y2024":329,"y2025":316,"diff":-27,"rate":-7.87},"田手原町":{"y2022":846,"y2023":833,"y2024":808,"y2025":803,"diff":-43,"rate":-5.08},"宮摺町":{"y2022":159,"y2023":149,"y2024":144,"y2025":139,"diff":-20,"rate":-12.58},"大崎町":{"y2022":248,"y2023":236,"y2024":214,"y2025":207,"diff":-41,"rate":-16.53},"千々町":{"y2022":240,"y2023":242,"y2024":231,"y2025":220,"diff":-20,"rate":-8.33},"式見町":{"y2022":589,"y2023":570,"y2024":553,"y2025":538,"diff":-51,"rate":-8.66},"向町":{"y2022":765,"y2023":719,"y2024":688,"y2025":669,"diff":-96,"rate":-12.55},"相川町":{"y2022":295,"y2023":286,"y2024":285,"y2025":281,"diff":-14,"rate":-4.75},"見崎町":{"y2022":71,"y2023":68,"y2024":68,"y2025":64,"diff":-7,"rate":-9.86},"牧野町":{"y2022":77,"y2023":75,"y2024":73,"y2025":74,"diff":-3,"rate":-3.9},"園田町":{"y2022":178,"y2023":174,"y2024":168,"y2025":160,"diff":-18,"rate":-10.11},"四杖町":{"y2022":591,"y2023":558,"y2024":546,"y2025":525,"diff":-66,"rate":-11.17},"芒塚町":{"y2022":677,"y2023":681,"y2024":654,"y2025":642,"diff":-35,"rate":-5.17},"宿町":{"y2022":2777,"y2023":2713,"y2024":2564,"y2025":2480,"diff":-297,"rate":-10.69},"界一丁目":{"y2022":725,"y2023":734,"y2024":726,"y2025":721,"diff":-4,"rate":-0.55},"界二丁目":{"y2022":1192,"y2023":1165,"y2024":1141,"y2025":1123,"diff":-69,"rate":-5.79},"網場町":{"y2022":1293,"y2023":1260,"y2024":1228,"y2025":1196,"diff":-97,"rate":-7.5},"春日町":{"y2022":139,"y2023":136,"y2024":129,"y2025":132,"diff":-7,"rate":-5.04},"潮見町":{"y2022":143,"y2023":138,"y2024":140,"y2025":134,"diff":-9,"rate":-6.29},"矢上町":{"y2022":1924,"y2023":1889,"y2024":1890,"y2025":1895,"diff":-29,"rate":-1.51},"平間町":{"y2022":1924,"y2023":1940,"y2024":1962,"y2025":1943,"diff":19,"rate":0.99},"高城台一丁目":{"y2022":1414,"y2023":1374,"y2024":1343,"y2025":1316,"diff":-98,"rate":-6.93},"高城台二丁目":{"y2022":1088,"y2023":1075,"y2024":1041,"y2025":1003,"diff":-85,"rate":-7.81},"鶴の尾町":{"y2022":948,"y2023":960,"y2024":953,"y2025":934,"diff":-14,"rate":-1.48},"現川町":{"y2022":671,"y2023":658,"y2024":653,"y2025":655,"diff":-16,"rate":-2.38},"田中町":{"y2022":6843,"y2023":6735,"y2024":6653,"y2025":6494,"diff":-349,"rate":-5.1},"東町":{"y2022":2805,"y2023":2779,"y2024":2756,"y2025":2734,"diff":-71,"rate":-2.53},"かき道一丁目":{"y2022":877,"y2023":867,"y2024":836,"y2025":818,"diff":-59,"rate":-6.73},"かき道二丁目":{"y2022":1546,"y2023":1516,"y2024":1512,"y2025":1479,"diff":-67,"rate":-4.33},"かき道三丁目":{"y2022":1381,"y2023":1350,"y2024":1320,"y2025":1295,"diff":-86,"rate":-6.23},"かき道四丁目":{"y2022":1604,"y2023":1594,"y2024":1573,"y2025":1577,"diff":-27,"rate":-1.68},"かき道五丁目":{"y2022":1352,"y2023":1324,"y2024":1246,"y2025":1184,"diff":-168,"rate":-12.43},"かき道六丁目":{"y2022":156,"y2023":160,"y2024":158,"y2025":164,"diff":8,"rate":5.13},"松原町":{"y2022":823,"y2023":806,"y2024":800,"y2025":785,"diff":-38,"rate":-4.62},"古賀町":{"y2022":1400,"y2023":1389,"y2024":1391,"y2025":1360,"diff":-40,"rate":-2.86},"つつじが丘一丁目":{"y2022":554,"y2023":570,"y2024":564,"y2025":536,"diff":-18,"rate":-3.25},"つつじが丘二丁目":{"y2022":470,"y2023":466,"y2024":454,"y2025":445,"diff":-25,"rate":-5.32},"つつじが丘三丁目":{"y2022":407,"y2023":407,"y2024":391,"y2025":401,"diff":-6,"rate":-1.47},"つつじが丘四丁目":{"y2022":708,"y2023":718,"y2024":718,"y2025":712,"diff":4,"rate":0.56},"つつじが丘五丁目":{"y2022":392,"y2023":395,"y2024":405,"y2025":418,"diff":26,"rate":6.63},"中里町":{"y2022":1683,"y2023":1683,"y2024":1656,"y2025":1634,"diff":-49,"rate":-2.91},"船石町":{"y2022":384,"y2023":381,"y2024":362,"y2025":351,"diff":-33,"rate":-8.59},"川内町":{"y2022":160,"y2023":162,"y2024":162,"y2025":161,"diff":1,"rate":0.62},"上戸石町":{"y2022":1402,"y2023":1367,"y2024":1338,"y2025":1382,"diff":-20,"rate":-1.43},"戸石町":{"y2022":4391,"y2023":4406,"y2024":4344,"y2025":4273,"diff":-118,"rate":-2.69},"牧島町":{"y2022":711,"y2023":694,"y2024":662,"y2025":651,"diff":-60,"rate":-8.44},"磯道町":{"y2022":1203,"y2023":1191,"y2024":1171,"y2025":1159,"diff":-44,"rate":-3.66},"古道町":{"y2022":54,"y2023":53,"y2024":45,"y2025":47,"diff":-7,"rate":-12.96},"三和町":{"y2022":748,"y2023":724,"y2024":723,"y2025":696,"diff":-52,"rate":-6.95},"土井首町":{"y2022":664,"y2023":619,"y2024":610,"y2025":559,"diff":-105,"rate":-15.81},"毛井首町":{"y2022":1650,"y2023":1586,"y2024":1570,"y2025":1491,"diff":-159,"rate":-9.64},"平瀬町":{"y2022":495,"y2023":476,"y2024":472,"y2025":471,"diff":-24,"rate":-4.85},"鶴見台一丁目":{"y2022":777,"y2023":779,"y2024":779,"y2025":758,"diff":-19,"rate":-2.45},"鶴見台二丁目":{"y2022":1125,"y2023":1113,"y2024":1124,"y2025":1116,"diff":-9,"rate":-0.8},"米山町":{"y2022":null,"y2023":0,"y2024":0,"y2025":0,"diff":0,"rate":0},"柳田町":{"y2022":180,"y2023":178,"y2024":174,"y2025":173,"diff":-7,"rate":-3.89},"草住町":{"y2022":241,"y2023":225,"y2024":210,"y2025":211,"diff":-30,"rate":-12.45},"京太郎町":{"y2022":31,"y2023":27,"y2024":22,"y2025":23,"diff":-8,"rate":-25.81},"鹿尾町":{"y2022":3,"y2023":3,"y2024":3,"y2025":3,"diff":0,"rate":0.0},"竿浦町":{"y2022":1291,"y2023":1271,"y2024":1268,"y2025":1250,"diff":-41,"rate":-3.18},"江川町":{"y2022":1248,"y2023":1208,"y2024":1218,"y2025":1232,"diff":-16,"rate":-1.28},"八郎岳町":{"y2022":3,"y2023":3,"y2024":3,"y2025":3,"diff":0,"rate":0.0},"末石町":{"y2022":473,"y2023":478,"y2024":477,"y2025":488,"diff":15,"rate":3.17},"平山町":{"y2022":1487,"y2023":1484,"y2024":1465,"y2025":1426,"diff":-61,"rate":-4.1},"平山台一丁目":{"y2022":824,"y2023":813,"y2024":810,"y2025":807,"diff":-17,"rate":-2.06},"平山台二丁目":{"y2022":1116,"y2023":1107,"y2024":1084,"y2025":1085,"diff":-31,"rate":-2.78},"深堀町一丁目":{"y2022":2859,"y2023":2818,"y2024":2747,"y2025":2651,"diff":-208,"rate":-7.28},"深堀町二丁目":{"y2022":294,"y2023":296,"y2024":305,"y2025":278,"diff":-16,"rate":-5.44},"深堀町三丁目":{"y2022":478,"y2023":483,"y2024":462,"y2025":450,"diff":-28,"rate":-5.86},"深堀町四丁目":{"y2022":498,"y2023":480,"y2024":470,"y2025":471,"diff":-27,"rate":-5.42},"深堀町五丁目":{"y2022":789,"y2023":781,"y2024":781,"y2025":791,"diff":2,"rate":0.25},"深堀町六丁目":{"y2022":275,"y2023":256,"y2024":245,"y2025":256,"diff":-19,"rate":-6.91},"大籠町":{"y2022":111,"y2023":107,"y2024":103,"y2025":101,"diff":-10,"rate":-9.01},"香焼町":{"y2022":3156,"y2023":3057,"y2024":2969,"y2025":2851,"diff":-305,"rate":-9.66},"伊王島町一丁目":{"y2022":221,"y2023":221,"y2024":204,"y2025":191,"diff":-30,"rate":-13.57},"伊王島町二丁目":{"y2022":424,"y2023":402,"y2024":390,"y2025":370,"diff":-54,"rate":-12.74},"高島町":{"y2022":298,"y2023":268,"y2024":249,"y2025":225,"diff":-73,"rate":-24.5},"以下宿町":{"y2022":102,"y2023":100,"y2024":103,"y2025":100,"diff":-2,"rate":-1.96},"野母崎樺島町":{"y2022":425,"y2023":408,"y2024":388,"y2025":376,"diff":-49,"rate":-11.53},"黒浜町":{"y2022":171,"y2023":165,"y2024":165,"y2025":164,"diff":-7,"rate":-4.09},"高浜町":{"y2022":1037,"y2023":997,"y2024":971,"y2025":965,"diff":-72,"rate":-6.94},"南越町":{"y2022":152,"y2023":148,"y2024":146,"y2025":141,"diff":-11,"rate":-7.24},"野母町":{"y2022":1436,"y2023":1420,"y2024":1369,"y2025":1329,"diff":-107,"rate":-7.45},"脇岬町":{"y2022":1229,"y2023":1196,"y2024":1138,"y2025":1104,"diff":-125,"rate":-10.17},"蚊焼町":{"y2022":1995,"y2023":1954,"y2024":1885,"y2025":1858,"diff":-137,"rate":-6.87},"川原町":{"y2022":669,"y2023":664,"y2024":652,"y2025":639,"diff":-30,"rate":-4.48},"為石町":{"y2022":1503,"y2023":1493,"y2024":1458,"y2025":1450,"diff":-53,"rate":-3.53},"椿が丘町":{"y2022":921,"y2023":937,"y2024":934,"y2025":922,"diff":1,"rate":0.11},"藤田尾町":{"y2022":64,"y2023":60,"y2024":56,"y2025":54,"diff":-10,"rate":-15.62},"布巻町":{"y2022":948,"y2023":924,"y2024":908,"y2025":865,"diff":-83,"rate":-8.76},"晴海台町":{"y2022":2719,"y2023":2671,"y2024":2609,"y2025":2544,"diff":-175,"rate":-6.44},"宮崎町":{"y2022":696,"y2023":696,"y2024":679,"y2025":644,"diff":-52,"rate":-7.47},"松崎町":{"y2022":143,"y2023":139,"y2024":129,"y2025":128,"diff":-15,"rate":-10.49},"三重町":{"y2022":938,"y2023":914,"y2024":903,"y2025":874,"diff":-64,"rate":-6.82},"三重田町":{"y2022":166,"y2023":170,"y2024":165,"y2025":157,"diff":-9,"rate":-5.42},"樫山町":{"y2022":585,"y2023":569,"y2024":571,"y2025":552,"diff":-33,"rate":-5.64},"畦町":{"y2022":41,"y2023":41,"y2024":40,"y2025":41,"diff":0,"rate":0.0},"三京町":{"y2022":1462,"y2023":1461,"y2024":1438,"y2025":1413,"diff":-49,"rate":-3.35},"京泊一丁目":{"y2022":780,"y2023":782,"y2024":775,"y2025":779,"diff":-1,"rate":-0.13},"京泊二丁目":{"y2022":911,"y2023":891,"y2024":849,"y2025":828,"diff":-83,"rate":-9.11},"京泊三丁目":{"y2022":682,"y2023":670,"y2024":647,"y2025":643,"diff":-39,"rate":-5.72},"さくらの里一丁目":{"y2022":1554,"y2023":1532,"y2024":1518,"y2025":1456,"diff":-98,"rate":-6.31},"さくらの里二丁目":{"y2022":1964,"y2023":1976,"y2024":1950,"y2025":1921,"diff":-43,"rate":-2.19},"さくらの里三丁目":{"y2022":19,"y2023":19,"y2024":17,"y2025":13,"diff":-6,"rate":-31.58},"畝刈町":{"y2022":2315,"y2023":2248,"y2024":2175,"y2025":2121,"diff":-194,"rate":-8.38},"豊洋台一丁目":{"y2022":1590,"y2023":1590,"y2024":1568,"y2025":1592,"diff":2,"rate":0.13},"豊洋台二丁目":{"y2022":1059,"y2023":1301,"y2024":1362,"y2025":1429,"diff":370,"rate":34.94},"鳴見町":{"y2022":980,"y2023":973,"y2024":962,"y2025":945,"diff":-35,"rate":-3.57},"鳴見台一丁目":{"y2022":1703,"y2023":1657,"y2024":1650,"y2025":1625,"diff":-78,"rate":-4.58},"鳴見台二丁目":{"y2022":2049,"y2023":2021,"y2024":1995,"y2025":1965,"diff":-84,"rate":-4.1},"多以良町":{"y2022":1109,"y2023":1108,"y2024":1100,"y2025":1089,"diff":-20,"rate":-1.8},"永田町":{"y2022":380,"y2023":380,"y2024":362,"y2025":347,"diff":-33,"rate":-8.68},"上黒崎町":{"y2022":135,"y2023":133,"y2024":135,"y2025":135,"diff":0,"rate":0.0},"下黒崎町":{"y2022":486,"y2023":469,"y2024":446,"y2025":424,"diff":-62,"rate":-12.76},"西出津町":{"y2022":457,"y2023":457,"y2024":448,"y2025":441,"diff":-16,"rate":-3.5},"東出津町":{"y2022":180,"y2023":169,"y2024":165,"y2025":159,"diff":-21,"rate":-11.67},"新牧野町":{"y2022":291,"y2023":297,"y2024":292,"y2025":295,"diff":4,"rate":1.37},"赤首町":{"y2022":87,"y2023":84,"y2024":83,"y2025":84,"diff":-3,"rate":-3.45},"神浦扇山町":{"y2022":74,"y2023":70,"y2024":70,"y2025":69,"diff":-5,"rate":-6.76},"神浦北大中尾町":{"y2022":13,"y2023":12,"y2024":12,"y2025":14,"diff":1,"rate":7.69},"神浦上大中尾町":{"y2022":77,"y2023":76,"y2024":71,"y2025":62,"diff":-15,"rate":-19.48},"神浦下大中尾町":{"y2022":81,"y2023":75,"y2024":73,"y2025":75,"diff":-6,"rate":-7.41},"神浦丸尾町":{"y2022":169,"y2023":161,"y2024":161,"y2025":144,"diff":-25,"rate":-14.79},"神浦江川町":{"y2022":236,"y2023":228,"y2024":221,"y2025":224,"diff":-12,"rate":-5.08},"神浦上道徳町":{"y2022":56,"y2023":53,"y2024":53,"y2025":48,"diff":-8,"rate":-14.29},"神浦下道徳町":{"y2022":10,"y2023":11,"y2024":11,"y2025":11,"diff":1,"rate":10.0},"神浦口福町":{"y2022":15,"y2023":14,"y2024":14,"y2025":11,"diff":-4,"rate":-26.67},"神浦向町":{"y2022":30,"y2023":28,"y2024":27,"y2025":28,"diff":-2,"rate":-6.67},"神浦夏井町":{"y2022":66,"y2023":61,"y2024":60,"y2025":53,"diff":-13,"rate":-19.7},"上大野町":{"y2022":68,"y2023":63,"y2024":61,"y2025":58,"diff":-10,"rate":-14.71},"下大野町":{"y2022":101,"y2023":96,"y2024":98,"y2025":92,"diff":-9,"rate":-8.91},"池島町":{"y2022":104,"y2023":99,"y2024":94,"y2025":86,"diff":-18,"rate":-17.31},"琴海尾戸町":{"y2022":535,"y2023":514,"y2024":485,"y2025":470,"diff":-65,"rate":-12.15},"琴海大平町":{"y2022":992,"y2023":986,"y2024":981,"y2025":989,"diff":-3,"rate":-0.3},"琴海形上町":{"y2022":658,"y2023":651,"y2024":627,"y2025":602,"diff":-56,"rate":-8.51},"長浦町":{"y2022":704,"y2023":691,"y2024":688,"y2025":662,"diff":-42,"rate":-5.97},"琴海戸根原町":{"y2022":380,"y2023":371,"y2024":358,"y2025":359,"diff":-21,"rate":-5.53},"琴海戸根町":{"y2022":1604,"y2023":1576,"y2024":1557,"y2025":1545,"diff":-59,"rate":-3.68},"琴海村松町":{"y2022":1495,"y2023":1509,"y2024":1531,"y2025":1516,"diff":21,"rate":1.4},"西海町":{"y2022":5551,"y2023":5501,"y2024":5523,"y2025":5482,"diff":-69,"rate":-1.24}};
+
+const MAPTILER_API_KEY = 'z1gaCOD83iJlNE7swkZk';
+const GEOJSON_URL = 'https://aizen2024.com/wp-content/uploads/2025/10/nagasaki_chome.geojson';
+const INITIAL_CENTER = [129.869, 32.748];
+const INITIAL_ZOOM  = 12.5;
+const INITIAL_PITCH = 45;
+const INITIAL_BEARING = -15;
+
+const map = new maplibregl.Map({
+  container: 'map',
+  style: {
+    version: 8,
+    sources: {
+      'gsi': {
+        type: 'raster',
+        tiles: ['https://cyberjapandata.gsi.go.jp/xyz/std/{z}/{x}/{y}.png'],
+        tileSize: 256,
+        attribution: '&copy; 国土地理院',
+        maxzoom: 18
+      }
+    },
+    layers: [{ id: 'gsi-tiles', type: 'raster', source: 'gsi' }]
+  },
+  center: INITIAL_CENTER,
+  zoom: INITIAL_ZOOM,
+  pitch: INITIAL_PITCH,
+  bearing: INITIAL_BEARING,
+  maxZoom: 18,
+  minZoom: 8
+});
+
+map.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), 'top-right');
+map.addControl(new maplibregl.ScaleControl({ unit: 'metric' }), 'bottom-right');
+
+let townGeoJSON = null;
+let selectedTown = null;
+let layersReady = false;
+let pendingPopVisibility = true;  // デフォルトON
+let yotoLayerReady = false;
+let pendingYotoVisibility = false;
+const YOTO_URL = 'https://aizen2024.com/wp-content/uploads/2026/06/nagasaki_yoto_chiiki.geojson';
+const YOTO_COLOR = [
+  'match', ['get', 'YoutoCode'],
+  1,  '#5BAD5B',
+  2,  '#8BC87F',
+  3,  '#C5E8A0',
+  4,  '#DDEEBB',
+  5,  '#F5F5C0',
+  6,  '#EDE888',
+  7,  '#E8C870',
+  9,  '#C8A070',
+  10, '#E89858',
+  11, '#C0C8E8',
+  12, '#9898D0',
+  13, '#7878B8',
+  '#CCCCCC'
+];
+let currentPopup = null;
+const allTownNames = [];
+
+map.on('load', () => {
+  map.addSource('maptiler-terrain', {
+    type: 'raster-dem',
+    url: 'https://api.maptiler.com/tiles/terrain-rgb/tiles.json?key=' + MAPTILER_API_KEY,
+    tileSize: 256
+  });
+  map.setTerrain({ source: 'maptiler-terrain', exaggeration: 1.5 });
+  map.setSky({
+    'sky-color': '#d4e7f5', 'sky-horizon-blend': 0.5,
+    'horizon-color': '#d4e7f5', 'horizon-fog-blend': 0.5,
+    'fog-color': '#d4e7f5', 'fog-ground-blend': 0.5
+  });
+
+  map.addSource('satellite', {
+    type: 'raster',
+    tiles: ['https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'],
+    tileSize: 256,
+    attribution: '&copy; Esri, Maxar, Earthstar Geographics',
+    maxzoom: 19
+  });
+  map.addLayer({
+    id: 'satellite-tiles',
+    type: 'raster',
+    source: 'satellite',
+    layout: { visibility: 'none' }
+  });
+
+  loadTownData();
+  loadViewspots();
+  loadTramStops();
+  document.getElementById('loading').style.display = 'none';
+  setTimeout(collapseGuide, 10000);
+});
+
+function loadTownData() {
+  fetch(GEOJSON_URL)
+    .then(r => { if (!r.ok) throw new Error('fetch failed'); return r.json(); })
+    .then(geojson => {
+      townGeoJSON = geojson;
+      geojson.features.forEach(f => {
+        const rawName = f.properties && f.properties.S_NAME;
+        const name = rawName ? (NODOT_MAP[rawName] || rawName) : null;
+        if (!name) return;
+        allTownNames.push(name);
+        const pd = POPULATION_DATA[name];
+        if (pd) {
+          f.properties.pop_y2022 = (pd.y2022 !== null && pd.y2022 !== undefined) ? pd.y2022 : -1;
+          f.properties.pop_y2023 = (pd.y2023 !== null && pd.y2023 !== undefined) ? pd.y2023 : -1;
+          f.properties.pop_y2024 = (pd.y2024 !== null && pd.y2024 !== undefined) ? pd.y2024 : -1;
+          f.properties.pop_y2025 = (pd.y2025 !== null && pd.y2025 !== undefined) ? pd.y2025 : -1;
+          f.properties.pop_rate  = (pd.rate  !== null && pd.rate  !== undefined) ? pd.rate  : -999;
+          f.properties.pop_diff  = (pd.diff  !== null && pd.diff  !== undefined) ? pd.diff  : 0;
+        } else {
+          f.properties.pop_y2022 = -1;
+          f.properties.pop_y2023 = -1;
+          f.properties.pop_y2024 = -1;
+          f.properties.pop_y2025 = -1;
+          f.properties.pop_rate  = -999;
+          f.properties.pop_diff  = 0;
+        }
+      });
+
+      map.addSource('towns', { type: 'geojson', data: geojson });
+
+      map.addLayer({
+        id: 'pop-fill',
+        type: 'fill',
+        source: 'towns',
+        layout: { visibility: 'visible' },
+        paint: {
+          'fill-color': [
+            'case',
+            ['<', ['get', 'pop_rate'], -100], '#BDBDBD',
+            ['>=', ['get', 'pop_rate'],  5 ], '#B71C1C',
+            ['>=', ['get', 'pop_rate'],  2 ], '#EF5350',
+            ['>=', ['get', 'pop_rate'],  0 ], '#FFCDD2',
+            ['>=', ['get', 'pop_rate'], -2 ], '#BBDEFB',
+            ['>=', ['get', 'pop_rate'], -5 ], '#1976D2',
+            '#1565C0'
+          ],
+          'fill-opacity': 0.42
+        }
+      });
+
+      map.addLayer({
+        id: 'town-outline',
+        type: 'line',
+        source: 'towns',
+        layout: { visibility: 'visible' },
+        paint: { 'line-color': '#fff', 'line-width': 1.0, 'line-opacity': 0.6 }
+      });
+
+      map.addLayer({
+        id: 'town-highlight-fill',
+        type: 'fill',
+        source: 'towns',
+        filter: ['==', 'S_NAME', '__none__'],
+        paint: { 'fill-color': '#1B6E6C', 'fill-opacity': 0.55 }
+      });
+
+      map.addLayer({
+        id: 'town-highlight-outline',
+        type: 'line',
+        source: 'towns',
+        filter: ['==', 'S_NAME', '__none__'],
+        paint: { 'line-color': '#E65100', 'line-width': 2.5, 'line-opacity': 0.9 }
+      });
+
+      layersReady = true;
+      if (pendingYotoVisibility) {
+        loadYotoLayer();
+      }
+      if (pendingAkiyaVisibility) {
+        loadAkiyaLayer();
+      }
+
+      if (pendingPopVisibility) {
+        map.setLayoutProperty('pop-fill', 'visibility', 'visible');
+        map.setPaintProperty('pop-fill', 'fill-opacity', 0.42);
+        document.getElementById('pop-legend').classList.add('visible');
+        map.setPaintProperty('town-outline', 'line-color', '#fff');
+        map.setPaintProperty('town-outline', 'line-opacity', 0.8);
+      } else {
+        map.setLayoutProperty('pop-fill', 'visibility', 'none');
+      }
+
+      map.on('click', 'pop-fill', e => showPopup(e));
+      map.on('click', 'town-highlight-fill', e => showPopup(e));
+      map.on('mouseenter', 'pop-fill', () => map.getCanvas().style.cursor = 'pointer');
+      map.on('mouseleave', 'pop-fill', () => map.getCanvas().style.cursor = '');
+      map.on('mouseenter', 'town-highlight-fill', () => map.getCanvas().style.cursor = 'pointer');
+      map.on('mouseleave', 'town-highlight-fill', () => map.getCanvas().style.cursor = '');
+    })
+    .catch(err => console.error('GeoJSON error:', err));
+}
+
+function showPopup(e) {
+  if (!e.features || !e.features.length) return;
+  // 空き家バンク表示中は、町丁目クリック時に
+  // 人口推移ポップアップを出さない（色は空き家発生率を示しているため、
+  // 人口増減と並べると誤解を招く）。
+  const akiyaChkShow = document.getElementById('akiya-checkbox');
+  if (akiyaChkShow && akiyaChkShow.checked) return;
+  if (akiyaCurrentPopup) { akiyaCurrentPopup.remove(); akiyaCurrentPopup = null; }
+  if (typeof viewspotCurrentPopup !== 'undefined' && viewspotCurrentPopup) { viewspotCurrentPopup.remove(); viewspotCurrentPopup = null; }
+  const p = e.features[0].properties;
+  const name = p.S_NAME || '不明';
+  const p22 = p.pop_y2022 > 0 ? p.pop_y2022 : null;
+  const p23 = p.pop_y2023 > 0 ? p.pop_y2023 : null;
+  const p24 = p.pop_y2024 > 0 ? p.pop_y2024 : null;
+  const p25 = p.pop_y2025 > 0 ? p.pop_y2025 : null;
+  const diff = p.pop_diff || 0;
+  const rate = p.pop_rate > -100 ? p.pop_rate : null;
+  const cls  = rate > 0 ? 'increase' : (rate < 0 ? 'decrease' : 'stable');
+  const fmt  = n => n != null ? n.toLocaleString() + '人' : '—';
+  const sign = v => (v > 0 ? '+' : '') + v;
+  const hasData = (p22 != null || p25 != null);
+
+  const rows = hasData
+    ? '<div class="popup-row"><span>2022年</span><span>' + fmt(p22) + '</span></div>' +
+      '<div class="popup-row"><span>2023年</span><span>' + fmt(p23) + '</span></div>' +
+      '<div class="popup-row"><span>2024年</span><span>' + fmt(p24) + '</span></div>' +
+      '<div class="popup-row"><span>2025年</span><span>' + fmt(p25) + '</span></div>' +
+      '<div class="popup-change ' + cls + '">' + sign(diff) + '人 (' + (rate != null ? sign(rate) : '0') + '%)<br>' +
+      '<small style="font-weight:400;font-size:10px">2022年→2025年</small></div>'
+    : '<p style="font-size:12px;color:#999;padding-top:4px">データなし</p>';
+
+  if (currentPopup) currentPopup.remove();
+  currentPopup = new maplibregl.Popup({ closeButton: true, maxWidth: '220px' })
+    .setLngLat(e.lngLat)
+    .setHTML('<div class="popup-inner"><div class="popup-town">' + name + '</div>' + rows + '</div>')
+    .addTo(map);
+}
+
+function selectTown(name) {
+  selectedTown = name;
+  if (layersReady) {
+    map.setFilter('town-highlight-fill',   ['==', 'S_NAME', name]);
+    map.setFilter('town-highlight-outline',['==', 'S_NAME', name]);
+  }
+
+  const info = document.getElementById('area-info');
+  info.classList.add('active');
+  document.getElementById('area-name').textContent = name;
+  document.getElementById('area-sub').textContent  = '3D地形上でハイライト表示中 — ドラッグで視点変更可';
+
+  const pd = POPULATION_DATA[name];
+  const popEl = document.getElementById('area-pop');
+  if (pd && pd.y2025 != null) {
+    const s = pd.diff >= 0 ? '+' : '';
+    const c = pd.rate >= 0 ? '#B71C1C' : '#1565C0';
+    popEl.innerHTML = '人口: <strong>' + pd.y2025.toLocaleString() + '人</strong> <span style="color:' + c + ';font-weight:700">' + s + pd.diff + '人 (' + s + pd.rate + '%)</span>';
+  } else { popEl.textContent = ''; }
+
+  if (townGeoJSON) {
+    const feat = townGeoJSON.features.find(f => f.properties && f.properties.S_NAME === name);
+    if (feat) {
+      const bb = getBbox(feat);
+      map.fitBounds(bb, { padding: 80, pitch: 45, duration: 800 });
+    }
+  }
+
+  if (window.innerWidth <= 600) document.getElementById('panel').classList.add('collapsed');
+  document.getElementById('search-input').value = '';
+  document.getElementById('search-results').style.display = 'none';
+  sendTownSearchEvent(name);
+}
+
+function getBbox(feat) {
+  let x0=Infinity, y0=Infinity, x1=-Infinity, y1=-Infinity;
+  function walk(a, d) {
+    if (d === 0) { x0=Math.min(x0,a[0]); x1=Math.max(x1,a[0]); y0=Math.min(y0,a[1]); y1=Math.max(y1,a[1]); }
+    else a.forEach(c => walk(c, d-1));
+  }
+  walk(feat.geometry.coordinates, feat.geometry.type === 'Polygon' ? 2 : 3);
+  return [[x0, y0], [x1, y1]];
+}
+
+// 路面電車の徒歩圏リストから町丁目を選んだ時専用のハイライト。
+// selectTown()は検索結果向けに寄りすぎるズームをするため、
+// 徒歩圏の文脈では引いた表示になるよう別関数にしている。
+function highlightChomeGently(name) {
+  selectedTown = name;
+  if (layersReady) {
+    map.setFilter('town-highlight-fill',   ['==', 'S_NAME', name]);
+    map.setFilter('town-highlight-outline',['==', 'S_NAME', name]);
+  }
+
+  const info = document.getElementById('area-info');
+  info.classList.add('active');
+  document.getElementById('area-name').textContent = name;
+  document.getElementById('area-sub').textContent  = '3D地形上でハイライト表示中 — ドラッグで視点変更可';
+
+  const pd = POPULATION_DATA[name];
+  const popEl = document.getElementById('area-pop');
+  if (pd && pd.y2025 != null) {
+    const s = pd.diff >= 0 ? '+' : '';
+    const c = pd.rate >= 0 ? '#B71C1C' : '#1565C0';
+    popEl.innerHTML = '人口: <strong>' + pd.y2025.toLocaleString() + '人</strong> <span style="color:' + c + ';font-weight:700">' + s + pd.diff + '人 (' + s + pd.rate + '%)</span>';
+  } else { popEl.textContent = ''; }
+
+  if (townGeoJSON) {
+    const feat = townGeoJSON.features.find(f => f.properties && f.properties.S_NAME === name);
+    if (feat) {
+      const bb = getBbox(feat);
+      map.fitBounds(bb, { padding: 200, maxZoom: 15, duration: 800 });
+    }
+  }
+}
+
+function onSearchInput(val) {
+  const q  = val.trim();
+  const el = document.getElementById('search-results');
+  if (!q) { el.style.display = 'none'; return; }
+  const hits = allTownNames.filter(n => n.includes(q)).slice(0, 30);
+  el.style.display = 'block';
+  if (!hits.length) { el.innerHTML = '<div id="result-count">該当なし</div>'; return; }
+  el.innerHTML = '<div id="result-count">' + hits.length + '件該当</div>' +
+    hits.map(n => '<div class="result-item" onclick="selectTown(\'' + n.replace(/\\/g, '\\\\').replace(/'/g, "\\'") + '\')">' + n + '</div>').join('');
+}
+
+const AREA_FALLBACK = {
+  '立山':  [129.874, 32.754, 14.5],
+  '浜平':  [129.881, 32.747, 14.5],
+  '坂本':  [129.866, 32.773, 14.5],
+  '鳳滝':  [129.852, 32.759, 14.5],
+  '大浦':  [129.879, 32.737, 14.5],
+  '岩見町': [129.882, 32.740, 14.5],
+  '戸町':  [129.875, 32.713, 14.5],
+  '福田':  [129.818, 32.772, 14.0]
+};
+
+function flyToArea(areaName, btn) {
+  document.querySelectorAll('.quick-btn').forEach(b => b.classList.remove('active'));
+  if (btn) btn.classList.add('active');
+
+  if (!townGeoJSON) {
+    const fb = AREA_FALLBACK[areaName];
+    if (fb) map.flyTo({ center: [fb[0], fb[1]], zoom: fb[2], pitch: 50, bearing: -15, duration: 1000 });
+    return;
+  }
+
+  let matches = townGeoJSON.features.filter(f =>
+    f.properties && f.properties.S_NAME && f.properties.S_NAME.startsWith(areaName)
+  );
+  if (!matches.length) {
+    matches = townGeoJSON.features.filter(f =>
+      f.properties && f.properties.S_NAME && f.properties.S_NAME.includes(areaName)
+    );
+  }
+  if (!matches.length) {
+    const fb = AREA_FALLBACK[areaName];
+    if (fb) map.flyTo({ center: [fb[0], fb[1]], zoom: fb[2], pitch: 50, bearing: -15, duration: 1000 });
+    return;
+  }
+
+  let x0=Infinity, y0=Infinity, x1=-Infinity, y1=-Infinity;
+  matches.forEach(f => {
+    const bb = getBbox(f);
+    x0=Math.min(x0,bb[0][0]); y0=Math.min(y0,bb[0][1]);
+    x1=Math.max(x1,bb[1][0]); y1=Math.max(y1,bb[1][1]);
+  });
+  map.fitBounds([[x0,y0],[x1,y1]], { padding: 80, pitch: 50, duration: 1000, maxZoom: 15 });
+
+  const matchNames = matches.map(f => f.properties.S_NAME);
+  map.setFilter('town-highlight-fill',   ['in', ['get', 'S_NAME'], ['literal', matchNames]]);
+  map.setFilter('town-highlight-outline',['in', ['get', 'S_NAME'], ['literal', matchNames]]);
+
+  const info = document.getElementById('area-info');
+  info.classList.add('active');
+  document.getElementById('area-name').textContent = areaName + '\uff08' + matches.length + '\u753a\uff09';
+  document.getElementById('area-sub').textContent  = '3D\u5730\u5f62\u4e0a\u3067\u30cf\u30a4\u30e9\u30a4\u30c8\u8868\u793a\u4e2d \u2014 \u30c9\u30e9\u30c3\u30b0\u3067\u8996\u70b9\u5909\u66f4\u53ef';
+  document.getElementById('area-pop').textContent  = '';
+
+  selectedTown = areaName;
+  if (window.innerWidth <= 600) document.getElementById('panel').classList.add('collapsed');
+}
+
+function resetView() {
+  map.flyTo({ center: [129.855, 32.745], zoom: 10.5, pitch: 30, bearing: 0, duration: 1200 });
+  document.querySelectorAll('.quick-btn').forEach(b => b.classList.remove('active'));
+  if (layersReady) {
+    map.setFilter('town-highlight-fill',   ['==', 'S_NAME', '__none__']);
+    map.setFilter('town-highlight-outline',['==', 'S_NAME', '__none__']);
+  }
+  document.getElementById('area-info').classList.remove('active');
+  selectedTown = null;
+  if (currentPopup) { currentPopup.remove(); currentPopup = null; }
+  hideAerialRoute();
+}
+
+function loadYotoLayer() {
+  if (yotoLayerReady) {
+    map.setLayoutProperty('yoto-fill', 'visibility', 'visible');
+    map.setPaintProperty('town-outline', 'line-color', '#fff');
+    map.setPaintProperty('town-outline', 'line-opacity', 0.8);
+    document.getElementById('yoto-legend').classList.add('visible');
+    return;
+  }
+  fetch(YOTO_URL)
+    .then(r => r.json())
+    .then(geojson => {
+      map.addSource('yoto', { type: 'geojson', data: geojson });
+      map.addLayer({
+        id: 'yoto-fill',
+        type: 'fill',
+        source: 'yoto',
+        layout: { visibility: 'visible' },
+        paint: {
+          'fill-color': YOTO_COLOR,
+          'fill-opacity': 0.45
+        }
+      }, 'town-outline');
+
+      map.setPaintProperty('town-outline', 'line-color', '#fff');
+      map.setPaintProperty('town-outline', 'line-opacity', 0.85);
+      map.setPaintProperty('town-outline', 'line-width', 2.0);
+
+      map.on('click', 'yoto-fill', e => {
+        if (!e.features || !e.features.length) return;
+        if (selectedTown) return;
+        if (currentPopup) { currentPopup.remove(); currentPopup = null; }
+        if (akiyaCurrentPopup) { akiyaCurrentPopup.remove(); akiyaCurrentPopup = null; }
+        if (typeof viewspotCurrentPopup !== 'undefined' && viewspotCurrentPopup) { viewspotCurrentPopup.remove(); viewspotCurrentPopup = null; }
+
+        const yotoName = e.features[0].properties.YoutoName || '不明';
+        const townFeatures = map.queryRenderedFeatures(e.point, { layers: ['pop-fill'] });
+        const townName = townFeatures.length ? (townFeatures[0].properties.S_NAME || '') : '';
+
+        const PopupClass = window.maplibregl ? window.maplibregl.Popup : null;
+        if (!PopupClass) return;
+
+        const townLine = townName
+          ? '<div style="font-size:12px;color:#555;margin-top:6px;padding-top:6px;border-top:1px solid #f0f0f0;">町丁目：' + townName + '</div>'
+          : '';
+
+        currentPopup = new PopupClass({ closeButton: true, closeOnClick: true })
+          .setLngLat(e.lngLat)
+          .setHTML(
+            '<div style="padding:10px 12px;min-width:160px;">' +
+            '<div style="font-size:13px;font-weight:bold;color:#333;">' + yotoName + '</div>' +
+            townLine +
+            '<div style="font-size:10px;color:#aaa;margin-top:6px;">2024年時点のデータ（国土数値情報）</div>' +
+            '</div>'
+          )
+          .addTo(map);
+      });
+      map.on('mouseenter', 'yoto-fill', () => { if (!selectedTown) map.getCanvas().style.cursor = 'pointer'; });
+      map.on('mouseleave', 'yoto-fill', () => { if (!selectedTown) map.getCanvas().style.cursor = ''; });
+
+      yotoLayerReady = true;
+      document.getElementById('yoto-legend').classList.add('visible');
+    })
+    .catch(err => console.error('Yoto GeoJSON error:', err));
+}
+
+function onYotoToggle(checked) {
+  const legend = document.getElementById('yoto-legend');
+  if (checked) {
+    const popChk = document.getElementById('pop-checkbox');
+    if (popChk && popChk.checked) {
+      popChk.checked = false;
+      onPopToggle(false);
+    }
+    const akiyaChk2 = document.getElementById('akiya-checkbox');
+    if (akiyaChk2 && akiyaChk2.checked) {
+      akiyaChk2.checked = false;
+      onAkiyaToggle(false);
+    }
+    if (layersReady) {
+      loadYotoLayer();
+    } else {
+      pendingYotoVisibility = true;
+    }
+  } else {
+    legend.classList.remove('visible');
+    if (yotoLayerReady) {
+      map.setLayoutProperty('yoto-fill', 'visibility', 'none');
+      const popOn = document.getElementById('pop-checkbox').checked;
+      if (!popOn) {
+        map.setPaintProperty('town-outline', 'line-color', '#fff');
+        map.setPaintProperty('town-outline', 'line-opacity', 0.6);
+        map.setPaintProperty('town-outline', 'line-width', 1.0);
+      }
+    } else {
+      pendingYotoVisibility = false;
+    }
+  }
+  hideAerialRoute();
+}
+
+function closeYotoLegend() {
+  document.getElementById('yoto-legend').classList.remove('visible');
+}
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// PWA-bug-1 修正 (2026-06-08)
+// onPopToggle(false) 時に selectedTown・currentPopup・
+// ハイライトフィルター・area-info をリセットする処理を追加
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+function onPopToggle(checked) {
+  const legend = document.getElementById('pop-legend');
+  if (checked) {
+    const yotoChk = document.getElementById('yoto-checkbox');
+    if (yotoChk && yotoChk.checked) {
+      yotoChk.checked = false;
+      onYotoToggle(false);
+    }
+    const akiyaChk1 = document.getElementById('akiya-checkbox');
+    if (akiyaChk1 && akiyaChk1.checked) {
+      akiyaChk1.checked = false;
+      onAkiyaToggle(false);
+    }
+    legend.classList.add('visible');
+    if (layersReady) {
+      map.setLayoutProperty('pop-fill', 'visibility', 'visible');
+      map.setPaintProperty('pop-fill', 'fill-opacity', 0.42);
+      map.setPaintProperty('town-outline', 'line-color', '#fff');
+      map.setPaintProperty('town-outline', 'line-opacity', 0.8);
+    } else {
+      pendingPopVisibility = true;
+    }
+  } else {
+    legend.classList.remove('visible');
+    // ── 追加: ポップアップを閉じる ──
+    if (currentPopup) {
+      currentPopup.remove();
+      currentPopup = null;
+    }
+    // ── 追加: 選択中の町丁をリセット ──
+    selectedTown = null;
+    // ── 追加: ハイライトフィルターを非表示に戻す ──
+    if (layersReady) {
+      map.setFilter('town-highlight-fill',   ['==', 'S_NAME', '__none__']);
+      map.setFilter('town-highlight-outline', ['==', 'S_NAME', '__none__']);
+      map.setLayoutProperty('pop-fill', 'visibility', 'none');
+      map.setPaintProperty('town-outline', 'line-opacity', 0.5);
+    } else {
+      pendingPopVisibility = false;
+    }
+    // ── 追加: area-info パネルを非表示 ──
+    document.getElementById('area-info').classList.remove('active');
+  }
+  hideAerialRoute();
+}
+
+function collapseGuide() {
+  document.getElementById('guide').style.setProperty('display', 'none', 'important');
+  document.getElementById('guide-toggle').style.display = 'block';
+}
+function expandGuide() {
+  document.getElementById('guide').style.setProperty('display', 'block', 'important');
+  document.getElementById('guide-toggle').style.display = 'none';
+}
+function togglePanel() {
+  const panel = document.getElementById('panel');
+  const isCollapsing = !panel.classList.contains('collapsed');
+  panel.classList.toggle('collapsed');
+
+  if (window.innerWidth > 600) {
+    document.getElementById('pc-toggle').style.display = isCollapsing ? 'flex' : 'none';
+  }
+
+  if (!isCollapsing && window.innerWidth <= 600) {
+    document.getElementById('pop-legend').classList.remove('visible');
+  }
+}
+
+let currentMapView = 'standard';
+
+function setMapView(mode) {
+  if (mode === currentMapView) return;
+  currentMapView = mode;
+
+  if (mode === 'satellite') {
+    map.setLayoutProperty('satellite-tiles', 'visibility', 'visible');
+    map.setLayoutProperty('gsi-tiles', 'visibility', 'none');
+    if (layersReady) map.setPaintProperty('town-outline', 'line-color', '#fff');
+    map.setPaintProperty('town-outline', 'line-opacity', 0.8);
+  } else {
+    map.setLayoutProperty('satellite-tiles', 'visibility', 'none');
+    map.setLayoutProperty('gsi-tiles', 'visibility', 'visible');
+    if (layersReady) {
+      const popOn = document.getElementById('pop-checkbox').checked;
+      const yotoOn = document.getElementById('yoto-checkbox').checked;
+      map.setPaintProperty('town-outline', 'line-opacity', (popOn || yotoOn) ? 0.6 : 0.35);
+    }
+  }
+
+  document.getElementById('btn-standard').classList.toggle('active', mode === 'standard');
+  document.getElementById('btn-satellite').classList.toggle('active', mode === 'satellite');
+}
+
+function clearSelection() {
+  if (layersReady) {
+    map.setFilter('town-highlight-fill',   ['==', 'S_NAME', '__none__']);
+    map.setFilter('town-highlight-outline',['==', 'S_NAME', '__none__']);
+  }
+  document.getElementById('area-info').classList.remove('active');
+  document.getElementById('search-input').value = '';
+  document.getElementById('search-results').style.display = 'none';
+  document.querySelectorAll('.quick-btn').forEach(b => b.classList.remove('active'));
+  selectedTown = null;
+  if (currentPopup) { currentPopup.remove(); currentPopup = null; }
+  hideAerialRoute();
+}
+
+function closeLegend() {
+  document.getElementById('pop-legend').classList.remove('visible');
+}
+
+function sendTownSearchEvent(townName) {
+  try {
+    window.parent.postMessage({ event: 'map_town_search', town_name: townName }, 'https://aizen2024.com');
+  } catch(e) {}
+}
+
+(function initMobile() {
+  if (window.innerWidth <= 600) {
+    document.getElementById('panel').classList.add('collapsed');
+  }
+})();
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// MAP-FLOW-1：源泉かけ流し（自動再生）
+// 対象：本ページ内の既存機能のみ（価格フィルタリング・路面電車徒歩圏表示・
+// 空き家バンクピン・ポップアップ/凡例）。ユーザー操作で停止する。
+// 260704-worklog_MAP-FLOW-1範囲修正.docx 2章の実装手順に対応。
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+let autoplayActive = false;
+let autoplayApplyingChange = false; // 自動再生自身の操作中はtrue（停止検知のガード）
+let autoplayStartedAt = null;
+let autoplayLoopToken = 0; // 再生ごとに更新。値が変われば古いループは自動的に止まる
+
+const AUTOPLAY_STEP_MS = {
+  opening: 3000,
+  satellite: 4000,
+  popOff: 1500,
+  akiyaOn: 4000,
+  tramSelect: 3000,
+  circleOn: 4000,
+  afterElev: 1500,
+  hamamachi: 6000,
+  pinTap: 5000
+};
+
+function sendAutoplayEvent(action, extra) {
+  try {
+    window.parent.postMessage(Object.assign({
+      event: 'map_autoplay',
+      action: action
+    }, extra || {}), 'https://aizen2024.com');
+  } catch (e) {}
+}
+
+function autoplaySleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+// 左パネルを、今操作している項目が見える位置まで自動でスクロールする
+// （地図の動きとパネルの表示の連動感を出すため）
+function scrollPanelTo(el, block) {
+  if (!el || typeof el.scrollIntoView !== 'function') return;
+  el.scrollIntoView({ behavior: 'smooth', block: block || 'center' });
+}
+
+// 自動再生自身が行うトグル操作を「ユーザー操作」と誤検知しないためのラッパー
+function autoplaySet(fn) {
+  autoplayApplyingChange = true;
+  try { fn(); } finally {
+    setTimeout(() => { autoplayApplyingChange = false; }, 0);
+  }
+}
+
+function resetToOpeningState() {
+  autoplaySet(() => {
+    if (currentPopup) { currentPopup.remove(); currentPopup = null; }
+    if (akiyaCurrentPopup) { akiyaCurrentPopup.remove(); akiyaCurrentPopup = null; }
+    if (typeof viewspotCurrentPopup !== 'undefined' && viewspotCurrentPopup) { viewspotCurrentPopup.remove(); viewspotCurrentPopup = null; }
+    if (typeof tramStopCurrentPopup !== 'undefined' && tramStopCurrentPopup) { tramStopCurrentPopup.remove(); tramStopCurrentPopup = null; }
+    hideAerialRoute();
+
+    // 栄町ハイライトなどで選択された町丁目をリセット
+    selectedTown = null;
+    document.getElementById('area-info').classList.remove('active');
+    document.querySelectorAll('.autoplay-active-chome').forEach(el => el.classList.remove('autoplay-active-chome'));
+    if (layersReady) {
+      map.setFilter('town-highlight-fill',   ['==', 'S_NAME', '__none__']);
+      map.setFilter('town-highlight-outline', ['==', 'S_NAME', '__none__']);
+      map.setPaintProperty('town-highlight-fill', 'fill-color', '#1B6E6C');
+      map.setPaintProperty('town-highlight-fill', 'fill-opacity', 0.55);
+    }
+
+    setMapView('standard');
+
+    const akiyaChk = document.getElementById('akiya-checkbox');
+    if (akiyaChk.checked) { akiyaChk.checked = false; onAkiyaToggle(false); }
+
+    const tramSelect = document.getElementById('tram-walk-select');
+    if (tramSelect.value !== '') { tramSelect.value = ''; onTramStopChange(); }
+
+    const popChk = document.getElementById('pop-checkbox');
+    if (!popChk.checked) { popChk.checked = true; onPopToggle(true); }
+
+    // パネルを一番上に戻す（次の周のオープニングに合わせて）
+    const panelEl = document.getElementById('panel');
+    if (panelEl) panelEl.scrollTo({ top: 0, behavior: 'smooth' });
+
+    map.jumpTo({ center: INITIAL_CENTER, zoom: INITIAL_ZOOM, pitch: INITIAL_PITCH, bearing: INITIAL_BEARING });
+  });
+}
+
+function waitForAkiyaReady(timeoutMs) {
+  return new Promise((resolve, reject) => {
+    const start = Date.now();
+    (function poll() {
+      if (akiyaLayerReady) return resolve();
+      if (Date.now() - start > timeoutMs) return reject(new Error('akiya layer timeout'));
+      setTimeout(poll, 200);
+    })();
+  });
+}
+
+// 標高差30m以内トグルの計算完了を待つ（2回目以降はキャッシュ済みで即完了）
+function waitForTramElevReady(idx, timeoutMs) {
+  return new Promise((resolve, reject) => {
+    const start = Date.now();
+    (function poll() {
+      if (tramElevCache[idx]) return resolve();
+      if (Date.now() - start > timeoutMs) return reject(new Error('elevation calc timeout'));
+      setTimeout(poll, 300);
+    })();
+  });
+}
+
+function findNearestAkiyaPin(lat, lon) {
+  if (!map.getLayer('akiya-pins-icon')) return null;
+  const point = map.project([lon, lat]);
+  const nearby = map.queryRenderedFeatures(
+    [[point.x - 80, point.y - 80], [point.x + 80, point.y + 80]],
+    { layers: ['akiya-pins-icon', 'akiya-pins-badge-icon'] }
+  );
+  if (!nearby.length) return null;
+  nearby.sort((a, b) => {
+    const da = Math.hypot(a.geometry.coordinates[0] - lon, a.geometry.coordinates[1] - lat);
+    const db = Math.hypot(b.geometry.coordinates[0] - lon, b.geometry.coordinates[1] - lat);
+    return da - db;
+  });
+  return nearby[0];
+}
+
+async function runAutoplayLoop(myToken) {
+  while (autoplayActive && myToken === autoplayLoopToken) {
+    // 1. オープニング
+    resetToOpeningState();
+    await autoplaySleep(AUTOPLAY_STEP_MS.opening);
+    if (myToken !== autoplayLoopToken) return;
+
+    // 2. 航空写真（トグル切替）
+    autoplaySet(() => setMapView('satellite'));
+    await autoplaySleep(AUTOPLAY_STEP_MS.satellite);
+    if (myToken !== autoplayLoopToken) return;
+
+    // 3. 人口増減を表示OFF
+    autoplaySet(() => {
+      document.getElementById('pop-checkbox').checked = false;
+      onPopToggle(false);
+      scrollPanelTo(document.getElementById('pop-checkbox'));
+    });
+    await autoplaySleep(AUTOPLAY_STEP_MS.popOff);
+    if (myToken !== autoplayLoopToken) return;
+
+    // 4. 空き家バンクを表示ON
+    autoplaySet(() => {
+      document.getElementById('akiya-checkbox').checked = true;
+      onAkiyaToggle(true);
+      scrollPanelTo(document.getElementById('akiya-checkbox'));
+    });
+    try { await waitForAkiyaReady(8000); } catch (e) { /* 読み込み失敗時はこの周は進める */ }
+    await autoplaySleep(AUTOPLAY_STEP_MS.akiyaOn);
+    if (myToken !== autoplayLoopToken) return;
+
+    // 5〜8. 電停（思案橋）関連
+    const shianbashiIdx = tramStops.findIndex(s => s.name === '思案橋');
+    if (shianbashiIdx >= 0) {
+      // 5. 電停を選択
+      autoplaySet(() => {
+        document.getElementById('tram-walk-select').value = String(shianbashiIdx);
+        onTramStopChange();
+        scrollPanelTo(document.getElementById('tram-walk-select'));
+      });
+      await autoplaySleep(AUTOPLAY_STEP_MS.tramSelect);
+      if (myToken !== autoplayLoopToken) return;
+
+      // 6. 半径800mを表示
+      autoplaySet(() => {
+        document.getElementById('tram-circle-checkbox').checked = true;
+        onTramCircleToggle(true);
+        scrollPanelTo(document.getElementById('tram-circle-checkbox'), 'nearest');
+      });
+      await autoplaySleep(AUTOPLAY_STEP_MS.circleOn);
+      if (myToken !== autoplayLoopToken) return;
+
+      // 7. 標高差30m以内の徒歩圏を表示（計算完了を待ってから進む）
+      autoplaySet(() => {
+        document.getElementById('tram-elev-checkbox').checked = true;
+        onTramElevToggle(true);
+        scrollPanelTo(document.getElementById('tram-elev-checkbox'), 'nearest');
+      });
+      try { await waitForTramElevReady(shianbashiIdx, 20000); } catch (e) { /* 計算未完了でもこの周は進める */ }
+      await autoplaySleep(AUTOPLAY_STEP_MS.afterElev);
+      if (myToken !== autoplayLoopToken) return;
+
+      // 7.5. 徒歩圏内リストの一番上に表示されている「栄町」をハイライト表示
+      // （リストをスクロールしなくても対応関係が分かるように、先頭表示の町を選ぶ。
+      //   リスト側の項目自体も一時的に太字＋オレンジ背景にして対応関係を強調する）
+      const eichomeLinkEl = document.querySelector('.tram-chome-link[data-name="栄町"]');
+      autoplaySet(() => {
+        map.setPaintProperty('town-highlight-fill', 'fill-color', '#FF6D00');
+        map.setPaintProperty('town-highlight-fill', 'fill-opacity', 0.75);
+        if (eichomeLinkEl) {
+          eichomeLinkEl.classList.add('autoplay-active-chome');
+          scrollPanelTo(eichomeLinkEl, 'center');
+        }
+        highlightChomeGently('栄町');
+      });
+      await autoplaySleep(AUTOPLAY_STEP_MS.hamamachi);
+      if (myToken !== autoplayLoopToken) return;
+      autoplaySet(() => {
+        map.setPaintProperty('town-highlight-fill', 'fill-color', '#1B6E6C');
+        map.setPaintProperty('town-highlight-fill', 'fill-opacity', 0.55);
+        if (eichomeLinkEl) eichomeLinkEl.classList.remove('autoplay-active-chome');
+      });
+
+      // 8. 近くの空き家バンク登録物件のピンをタップしてポップアップ表示
+      // （栄町ハイライトで視点が移動しているため、ピン検索の前に電停へ視点を戻す）
+      const stop = tramStops[shianbashiIdx];
+      autoplaySet(() => {
+        map.flyTo({ center: [stop.lon, stop.lat], zoom: 14.3, duration: 800 });
+      });
+      await autoplaySleep(900);
+      if (myToken !== autoplayLoopToken) return;
+      const pin = findNearestAkiyaPin(stop.lat, stop.lon);
+      if (pin && typeof window.showAkiyaPinPopup === 'function') {
+        autoplaySet(() => window.showAkiyaPinPopup({ features: [pin] }));
+      }
+      await autoplaySleep(AUTOPLAY_STEP_MS.pinTap);
+      if (myToken !== autoplayLoopToken) return;
+    }
+    // ループの先頭（1. オープニング）へ戻る
+  }
+}
+
+// MAP-FLOW-1 UX改善（v2）：開始・一時停止をトーストで知らせる
+let autoplayToastTimer = null;
+
+function showAutoplayToast(message, opts) {
+  opts = opts || {};
+  const toast = document.getElementById('autoplay-toast');
+  const msgEl = document.getElementById('autoplay-toast-msg');
+  const resumeBtn = document.getElementById('autoplay-toast-resume');
+  if (!toast || !msgEl || !resumeBtn) return;
+  msgEl.textContent = message;
+  resumeBtn.style.display = opts.showResume ? 'inline-block' : 'none';
+  toast.classList.add('visible');
+  if (autoplayToastTimer) clearTimeout(autoplayToastTimer);
+  autoplayToastTimer = setTimeout(hideAutoplayToast, opts.duration || 5000);
+}
+
+function hideAutoplayToast() {
+  const toast = document.getElementById('autoplay-toast');
+  if (toast) toast.classList.remove('visible');
+  if (autoplayToastTimer) { clearTimeout(autoplayToastTimer); autoplayToastTimer = null; }
+}
+
+function resumeAutoplayFromToast() {
+  hideAutoplayToast();
+  startAutoplay('toast_resume');
+}
+
+function startAutoplay(trigger) {
+  trigger = trigger || 'manual_button';
+  if (autoplayActive) return;
+  autoplayActive = true;
+  autoplayStartedAt = Date.now();
+  autoplayLoopToken++;
+  updateAutoplayButton();
+  sendAutoplayEvent('start', { trigger: trigger });
+  if (trigger === 'page_load') {
+    showAutoplayToast('自動でご案内を再生中です（タップでいつでも一時停止できます）', { showResume:false, duration:4500 });
+  } else {
+    hideAutoplayToast();
+  }
+  runAutoplayLoop(autoplayLoopToken);
+}
+
+function stopAutoplay(reason) {
+  if (!autoplayActive) return;
+  const durationSec = autoplayStartedAt ? Math.round((Date.now() - autoplayStartedAt) / 1000) : 0;
+  autoplayActive = false;
+  autoplayLoopToken++; // 実行中のループを安全に止める
+  updateAutoplayButton();
+  sendAutoplayEvent('stop', { stop_reason: reason, duration_sec: durationSec });
+  if (reason === 'user_interaction') {
+    showAutoplayToast('自動再生を一時停止しました', { showResume:true, duration:8000 });
+  }
+}
+
+function toggleAutoplayButton() {
+  if (autoplayActive) {
+    stopAutoplay('manual_button');
+  } else {
+    hideAutoplayToast();
+    startAutoplay('manual_button');
+  }
+}
+
+function updateAutoplayButton() {
+  const btn = document.getElementById('autoplay-btn');
+  if (!btn) return;
+  const icon = document.getElementById('autoplay-icon');
+  const label = document.getElementById('autoplay-label');
+  btn.classList.toggle('playing', autoplayActive);
+  icon.innerHTML = autoplayActive ? '&#x23F8;' : '&#x25B6;';
+  label.textContent = autoplayActive ? '自動再生中（タップで停止）' : '自動再生を開始';
+}
+
+// ── 停止検知：地図への直接操作・フィルターUI操作で自動再生を止める ──
+// map.on('zoomstart'/'dragstart'など)は自動再生自身のflyTo()でも発火するため使わず、
+// 実機の入力イベント（マウス/タッチ/ホイール）のみを対象にする。
+function handleUserInteraction() {
+  if (autoplayApplyingChange) return;
+  if (autoplayActive) stopAutoplay('user_interaction');
+}
+
+const autoplayCanvasEl = map.getCanvasContainer();
+['mousedown', 'touchstart', 'wheel', 'dblclick'].forEach(evt => {
+  autoplayCanvasEl.addEventListener(evt, handleUserInteraction, { passive: true });
+});
+
+document.querySelectorAll('#panel input, #panel select').forEach(el => {
+  el.addEventListener('input', handleUserInteraction);
+  el.addEventListener('change', handleUserInteraction);
+});
+document.querySelectorAll('#view-toggle button, .quick-btn, #toggle-btn, #pc-toggle, #panel-close').forEach(el => {
+  el.addEventListener('click', handleUserInteraction);
+});
+
+// prefers-reduced-motion：自動開始せず、ボタンから明示的に開始してもらう
+const autoplayPrefersReducedMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+if (!autoplayPrefersReducedMotion) {
+  setTimeout(() => startAutoplay('page_load'), 1500);
+} else {
+  updateAutoplayButton();
+}
+
+</script>
+
+<!-- PWA: Service Worker 登録 -->
+<!-- ※ sw.js の CACHE_VERSION を毎回1上げてからアップロードすること（現在 v21） -->
+<script>
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', function () {
+      navigator.serviceWorker
+        .register('/nagasaki-3d-map/sw.js')
+        .then(function (reg) {
+          console.log('[SW] 登録成功:', reg.scope);
+        })
+        .catch(function (err) {
+          console.warn('[SW] 登録失敗:', err);
+        });
+    });
+  }
+</script>
+
+</body>
+<!-- redeploy 2026-07-04 -->
+</html>
