@@ -210,11 +210,15 @@
       border-radius:4px; color:#B75B00 !important; text-decoration:none !important;
     }
     @media(max-width:600px) {
-      #autoplay-btn { padding:6px 10px; font-size:10px; max-width:78vw; }
-      #autoplay-btn #autoplay-label { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-    }
-    @media(max-width:380px) {
-      #autoplay-btn #autoplay-label { font-size:9px; max-width:34vw; }
+      /* MAP-FLOW-1 UX改善（v3）：ラベルを消してアイコンのみの丸ボタンに。
+         上段（検索・メニュー／ズーム＋−）と被らないよう少し下（top:56px）に配置 */
+      #autoplay-btn {
+        top:56px; left:50%; transform:translateX(-50%);
+        width:40px; height:40px; padding:0; border-radius:50%;
+        justify-content:center; max-width:none;
+      }
+      #autoplay-btn #autoplay-label { display:none; }
+      #autoplay-btn .autoplay-icon { font-size:17px; }
     }
 
     /* MAP-FLOW-1 UX改善（v2）：自動再生の開始・一時停止を知らせるトースト */
@@ -338,7 +342,7 @@
     }
     /* オートプレイ中の現在操作をひと言で示すキャプション（モバイル専用） */
     #autoplay-caption {
-      display:none; position:absolute; left:50%; top:56px; transform:translateX(-50%);
+      display:none; position:absolute; left:50%; top:104px; transform:translateX(-50%);
       z-index:140; max-width:calc(100vw - 32px);
       background:rgba(27,45,38,0.88); color:#fff; border-radius:20px;
       padding:7px 14px; font-size:11px; font-weight:600; white-space:nowrap;
@@ -2444,10 +2448,27 @@ function getBbox(feat) {
   return [[x0, y0], [x1, y1]];
 }
 
+// 2つのbbox（[[minLon,minLat],[maxLon,maxLat]]）を結合する
+function mergeBbox(a, b) {
+  return [
+    [Math.min(a[0][0], b[0][0]), Math.min(a[0][1], b[0][1])],
+    [Math.max(a[1][0], b[1][0]), Math.max(a[1][1], b[1][1])]
+  ];
+}
+
+// 中心点＋半径（m）からおおよそのbboxを作る（MAP-FLOW-1：800m円を画面内に収めるため）
+function bboxFromCenterRadius(lat, lon, radiusM) {
+  const dLat = radiusM / 111000; // 緯度1度 ≒ 111km
+  const dLon = dLat / Math.cos(lat * Math.PI / 180);
+  return [[lon - dLon, lat - dLat], [lon + dLon, lat + dLat]];
+}
+
 // 路面電車の徒歩圏リストから町丁目を選んだ時専用のハイライト。
 // selectTown()は検索結果向けに寄りすぎるズームをするため、
 // 徒歩圏の文脈では引いた表示になるよう別関数にしている。
-function highlightChomeGently(name) {
+// viewOpts.extendBbox / viewOpts.padding / viewOpts.maxZoom：
+// MAP-FLOW-1の自動再生時に、800m円全体が入るようズームアウトするための拡張引数（任意）。
+function highlightChomeGently(name, viewOpts) {
   selectedTown = name;
   if (layersReady) {
     map.setFilter('town-highlight-fill',   ['==', 'S_NAME', name]);
@@ -2470,8 +2491,13 @@ function highlightChomeGently(name) {
   if (townGeoJSON) {
     const feat = townGeoJSON.features.find(f => f.properties && f.properties.S_NAME === name);
     if (feat) {
-      const bb = getBbox(feat);
-      map.fitBounds(bb, { padding: 200, maxZoom: 15, duration: 800 });
+      let bb = getBbox(feat);
+      if (viewOpts && viewOpts.extendBbox) bb = mergeBbox(bb, viewOpts.extendBbox);
+      map.fitBounds(bb, {
+        padding: (viewOpts && viewOpts.padding) || 200,
+        maxZoom: (viewOpts && viewOpts.maxZoom) || 15,
+        duration: 800
+      });
     }
   }
 }
@@ -2990,7 +3016,10 @@ async function runAutoplayLoop(myToken) {
       // 7.5. 徒歩圏内リストの一番上に表示されている「栄町」をハイライト表示
       // （リストをスクロールしなくても対応関係が分かるように、先頭表示の町を選ぶ。
       //   リスト側の項目自体も一時的に太字＋オレンジ背景にして対応関係を強調する）
+      // MAP-FLOW-1 UX改善（v3）：800m円の内外が見えるよう、円のbboxを合わせてズームアウト
       const eichomeLinkEl = document.querySelector('.tram-chome-link[data-name="栄町"]');
+      const eichomeStop = tramStops[shianbashiIdx];
+      const eichomeCircleBbox = bboxFromCenterRadius(eichomeStop.lat, eichomeStop.lon, 800);
       autoplaySet(() => {
         map.setPaintProperty('town-highlight-fill', 'fill-color', '#FF6D00');
         map.setPaintProperty('town-highlight-fill', 'fill-opacity', 0.75);
@@ -2998,7 +3027,7 @@ async function runAutoplayLoop(myToken) {
           eichomeLinkEl.classList.add('autoplay-active-chome');
           scrollPanelTo(eichomeLinkEl, 'center');
         }
-        highlightChomeGently('栄町');
+        highlightChomeGently('栄町', { extendBbox: eichomeCircleBbox, padding: 60, maxZoom: 14 });
       });
       setAutoplayCaption('「栄町」をハイライト表示中');
       await autoplaySleep(AUTOPLAY_STEP_MS.hamamachi);
