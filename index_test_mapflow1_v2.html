@@ -1944,7 +1944,13 @@ function hideTramWalkLayers() {
 // 現在表示中の円・徒歩圏ポリゴンが見えるように視点を調整する。
 // map.fitBounds()はピッチ（3D傾き）がついた状態だと期待通りに
 // 機能しないことがあるため、傾きをそのまま保つflyTo（固定ズーム）を使う。
+// MAP-FLOW-1 UX改善（v5）：自動再生中はカメラを自動再生ループ側で
+// 一元管理する（6.でズームアウト→7.は保持→8.で中心だけ戻す）ため、
+// ここでの強制ズーム（14.3）は自動再生中は無効化する。
+// これをしないと、標高差計算が完了した瞬間（7.の途中）にここが呼ばれて
+// 意図しないズームインが発生してしまう。
 function fitTramWalkView() {
+  if (autoplayActive) return;
   if (tramSelectedIdx === null) return;
   const stop = tramStops[tramSelectedIdx];
   map.flyTo({ center: [stop.lon, stop.lat], zoom: 14.3, duration: 800 });
