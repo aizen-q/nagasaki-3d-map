@@ -1942,12 +1942,20 @@ function hideTramWalkLayers() {
 }
 
 // 現在表示中の円・徒歩圏ポリゴンが見えるように視点を調整する。
-// map.fitBounds()はピッチ（3D傾き）がついた状態だと期待通りに
-// 機能しないことがあるため、傾きをそのまま保つflyTo（固定ズーム）を使う。
+// MAP-FLOW-1 UX改善（v7）：以前はzoom:14.3固定のflyToだったが、これでは
+// 800m圏の内側・外側が同時に見えず視認しづらいという指摘を受け、
+// 自動再生（6.のズームアウト）と同じ「円のbboxにfitBounds」方式に統一した。
+// 手動操作・自動再生のどちらでも、800m圏全体が画面に収まるようになる。
+// MAP-FLOW-1 UX改善（v5）：自動再生中はカメラを自動再生ループ側で
+// 一元管理する（6.でズームアウト→7.は保持→8.で中心だけ戻す）ため、
+// ここでの調整は自動再生中は無効化する（標高差計算完了時の意図しない
+// カメラ移動を防ぐため）。
 function fitTramWalkView() {
+  if (autoplayActive) return;
   if (tramSelectedIdx === null) return;
   const stop = tramStops[tramSelectedIdx];
-  map.flyTo({ center: [stop.lon, stop.lat], zoom: 14.3, duration: 800 });
+  const bbox = bboxFromCenterRadius(stop.lat, stop.lon, 800);
+  map.fitBounds(bbox, { padding: 60, maxZoom: 14, duration: 800 });
 }
 
 function drawTramCircle() {
@@ -2982,6 +2990,10 @@ async function runAutoplayLoop(myToken) {
     // 5〜8. 電停（思案橋）関連
     const shianbashiIdx = tramStops.findIndex(s => s.name === '思案橋');
     if (shianbashiIdx >= 0) {
+      const stop = tramStops[shianbashiIdx];
+      // MAP-FLOW-1 UX改善（v4）：800m円のbboxはこの区間で共通利用（6〜8で使う）
+      const circleBbox800 = bboxFromCenterRadius(stop.lat, stop.lon, 800);
+
       // 5. 電停を選択
       autoplaySet(() => {
         document.getElementById('tram-walk-select').value = String(shianbashiIdx);
@@ -2993,16 +3005,19 @@ async function runAutoplayLoop(myToken) {
       if (myToken !== autoplayLoopToken) return;
 
       // 6. 半径800mを表示
+      // MAP-FLOW-1 UX改善（v4）：円が出た瞬間にズームアウトし、800m圏の内外を見せる
       autoplaySet(() => {
         document.getElementById('tram-circle-checkbox').checked = true;
         onTramCircleToggle(true);
         scrollPanelTo(document.getElementById('tram-circle-checkbox'), 'nearest');
+        map.fitBounds(circleBbox800, { padding: 60, maxZoom: 14, duration: 800 });
       });
       setAutoplayCaption('電停から半径800mを表示中');
       await autoplaySleep(AUTOPLAY_STEP_MS.circleOn);
       if (myToken !== autoplayLoopToken) return;
 
       // 7. 標高差30m以内の徒歩圏を表示（計算完了を待ってから進む）
+      // ※カメラは6.で設定した800m圏ズームのまま変更しない
       autoplaySet(() => {
         document.getElementById('tram-elev-checkbox').checked = true;
         onTramElevToggle(true);
@@ -3016,10 +3031,8 @@ async function runAutoplayLoop(myToken) {
       // 7.5. 徒歩圏内リストの一番上に表示されている「栄町」をハイライト表示
       // （リストをスクロールしなくても対応関係が分かるように、先頭表示の町を選ぶ。
       //   リスト側の項目自体も一時的に太字＋オレンジ背景にして対応関係を強調する）
-      // MAP-FLOW-1 UX改善（v3）：800m円の内外が見えるよう、円のbboxを合わせてズームアウト
+      // 800m円のbboxは6.と同じものを使い、カメラの動きを一貫させる
       const eichomeLinkEl = document.querySelector('.tram-chome-link[data-name="栄町"]');
-      const eichomeStop = tramStops[shianbashiIdx];
-      const eichomeCircleBbox = bboxFromCenterRadius(eichomeStop.lat, eichomeStop.lon, 800);
       autoplaySet(() => {
         map.setPaintProperty('town-highlight-fill', 'fill-color', '#FF6D00');
         map.setPaintProperty('town-highlight-fill', 'fill-opacity', 0.75);
@@ -3027,7 +3040,7 @@ async function runAutoplayLoop(myToken) {
           eichomeLinkEl.classList.add('autoplay-active-chome');
           scrollPanelTo(eichomeLinkEl, 'center');
         }
-        highlightChomeGently('栄町', { extendBbox: eichomeCircleBbox, padding: 60, maxZoom: 14 });
+        highlightChomeGently('栄町', { extendBbox: circleBbox800, padding: 60, maxZoom: 14 });
       });
       setAutoplayCaption('「栄町」をハイライト表示中');
       await autoplaySleep(AUTOPLAY_STEP_MS.hamamachi);
@@ -3039,10 +3052,11 @@ async function runAutoplayLoop(myToken) {
       });
 
       // 8. 近くの空き家バンク登録物件のピンをタップしてポップアップ表示
-      // （栄町ハイライトで視点が移動しているため、ピン検索の前に電停へ視点を戻す）
-      const stop = tramStops[shianbashiIdx];
+      // （栄町ハイライトで視点が移動しているため、ピン検索の前に電停へ視点を戻す。
+      //   MAP-FLOW-1 UX改善（v4）：ズームは変えず中心だけ電停に戻す＝ポップアップが
+      //   「どこの話か」分かる程度に周辺が見える状態を保つ）
       autoplaySet(() => {
-        map.flyTo({ center: [stop.lon, stop.lat], zoom: 14.3, duration: 800 });
+        map.easeTo({ center: [stop.lon, stop.lat], duration: 700 });
       });
       setAutoplayCaption('近くの登録物件をタップ表示中');
       await autoplaySleep(900);
