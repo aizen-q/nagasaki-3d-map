@@ -221,6 +221,22 @@
       #autoplay-btn .autoplay-icon { font-size:17px; }
     }
 
+    /* AUDIO-1：音声ナレーションを有効化するボタン（ブラウザの自動再生ポリシー対応）
+       自動再生開始時に表示し、タップされるまで音声は鳴らさない */
+    #autoplay-audio-btn {
+      position:absolute; top:52px; left:50%; transform:translateX(-50%); z-index:150;
+      background:rgba(255,255,255,0.97); border:none; border-radius:20px;
+      padding:7px 14px; font-size:11px; font-weight:700; color:#1B6E6C;
+      cursor:pointer; box-shadow:0 2px 10px rgba(0,0,0,0.18);
+      align-items:center; gap:6px; white-space:nowrap;
+      display:none;
+    }
+    #autoplay-audio-btn.visible { display:flex; }
+    #autoplay-audio-btn:hover { background:#fff; }
+    @media(max-width:600px) {
+      #autoplay-audio-btn { top:102px; left:50%; transform:translateX(-50%); font-size:11px; padding:6px 12px; }
+    }
+
     /* MAP-FLOW-1 UX改善（v2）：自動再生の開始・一時停止を知らせるトースト */
     #autoplay-toast {
       position:absolute; left:50%; bottom:16px; transform:translateX(-50%) translateY(12px);
@@ -684,6 +700,11 @@
 <!-- MAP-FLOW-1 UX改善（v3）：自動再生中の操作内容キャプション（モバイル専用コンパクト表示） -->
 <div id="autoplay-caption"></div>
 
+<!-- AUDIO-1：音声ガイド有効化ボタン（自動再生中・音声未有効時のみ表示） -->
+<button id="autoplay-audio-btn" onclick="enableAutoplayAudio()" title="音声ガイドを有効にする">
+  <span>&#x1F50A;</span><span>音声つきで見る</span>
+</button>
+
 <!-- MAP-FLOW-1 UX改善（v2）：開始・一時停止を知らせるトースト -->
 <div id="autoplay-toast">
   <span class="at-msg" id="autoplay-toast-msg"></span>
@@ -777,6 +798,7 @@
     ピンチ: ズーム</p>
     <p style="margin-top:6px"><span class="device">共通</span><br>
     右上 コンパス針 クリックで北向きリセット</p>
+    <p style="margin-top:6px; font-size:9px; color:#aaa;">音声ガイド: VOICEVOX:波音リツ</p>
   </div>
 </div>
 <a id="aizen-link" href="https://aizen2024.com/data-as-soil/?utm_source=pwa&utm_medium=referral&utm_campaign=nagasaki_3dmap" target="_blank" rel="noopener">🏠 あいぜん不動産サイトへ</a>
@@ -2847,6 +2869,73 @@ const AUTOPLAY_STEP_MS = {
   pinTap: 5000
 };
 
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// AUDIO-1：自動再生キャプションの音声ナレーション（VOICEVOX・波音リツ）
+// ブラウザの自動再生ポリシーに対応するため、ユーザーが「音声つきで見る」を
+// タップするまで音声は再生しない（autoplayAudioEnabled）。
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+const AUTOPLAY_AUDIO_FILES = {
+  opening:    'audio/autoplay-01.wav',
+  satellite:  'audio/autoplay-02.wav',
+  popOff:     'audio/autoplay-03.wav',
+  akiyaOn:    'audio/autoplay-04.wav',
+  tramSelect: 'audio/autoplay-05.wav',
+  circleOn:   'audio/autoplay-06.wav',
+  afterElev:  'audio/autoplay-07.wav',
+  hamamachi:  'audio/autoplay-08.wav',
+  pinTap:     'audio/autoplay-09.wav'
+};
+
+let autoplayAudioEnabled = false;
+let autoplayAudioEl = null;
+
+function getAutoplayAudioEl() {
+  if (!autoplayAudioEl) {
+    autoplayAudioEl = new Audio();
+    autoplayAudioEl.preload = 'auto';
+  }
+  return autoplayAudioEl;
+}
+
+function playAutoplayAudio(stepKey) {
+  if (!autoplayAudioEnabled) return;
+  const src = AUTOPLAY_AUDIO_FILES[stepKey];
+  if (!src) return;
+  const audioEl = getAutoplayAudioEl();
+  audioEl.pause();
+  audioEl.currentTime = 0;
+  audioEl.src = src;
+  audioEl.play().catch(() => { /* 再生できない場合は無視（自動再生ポリシー等） */ });
+}
+
+function stopAutoplayAudio() {
+  if (autoplayAudioEl) {
+    autoplayAudioEl.pause();
+    autoplayAudioEl.currentTime = 0;
+  }
+}
+
+// キャプション表示と音声再生をまとめて行うヘルパー
+function announceAutoplayStep(text, stepKey) {
+  setAutoplayCaption(text);
+  playAutoplayAudio(stepKey);
+}
+
+function showAutoplayAudioBtn() {
+  const btn = document.getElementById('autoplay-audio-btn');
+  if (btn && !autoplayAudioEnabled) btn.classList.add('visible');
+}
+
+function hideAutoplayAudioBtn() {
+  const btn = document.getElementById('autoplay-audio-btn');
+  if (btn) btn.classList.remove('visible');
+}
+
+function enableAutoplayAudio() {
+  autoplayAudioEnabled = true;
+  hideAutoplayAudioBtn();
+}
+
 function sendAutoplayEvent(action, extra) {
   try {
     window.parent.postMessage(Object.assign({
@@ -2956,13 +3045,13 @@ async function runAutoplayLoop(myToken) {
   while (autoplayActive && myToken === autoplayLoopToken) {
     // 1. オープニング
     resetToOpeningState();
-    setAutoplayCaption('ご案内をスタートします');
+    announceAutoplayStep('ご案内をスタートします', 'opening');
     await autoplaySleep(AUTOPLAY_STEP_MS.opening);
     if (myToken !== autoplayLoopToken) return;
 
     // 2. 航空写真（トグル切替）
     autoplaySet(() => setMapView('satellite'));
-    setAutoplayCaption('航空写真に切替中');
+    announceAutoplayStep('航空写真に切替中', 'satellite');
     await autoplaySleep(AUTOPLAY_STEP_MS.satellite);
     if (myToken !== autoplayLoopToken) return;
 
@@ -2972,7 +3061,7 @@ async function runAutoplayLoop(myToken) {
       onPopToggle(false);
       scrollPanelTo(document.getElementById('pop-checkbox'));
     });
-    setAutoplayCaption('人口増減の表示をOFF');
+    announceAutoplayStep('人口増減の表示をOFF', 'popOff');
     await autoplaySleep(AUTOPLAY_STEP_MS.popOff);
     if (myToken !== autoplayLoopToken) return;
 
@@ -2982,7 +3071,7 @@ async function runAutoplayLoop(myToken) {
       onAkiyaToggle(true);
       scrollPanelTo(document.getElementById('akiya-checkbox'));
     });
-    setAutoplayCaption('空き家バンク登録物件を表示中');
+    announceAutoplayStep('空き家バンク登録物件を表示中', 'akiyaOn');
     try { await waitForAkiyaReady(8000); } catch (e) { /* 読み込み失敗時はこの周は進める */ }
     await autoplaySleep(AUTOPLAY_STEP_MS.akiyaOn);
     if (myToken !== autoplayLoopToken) return;
@@ -3000,7 +3089,7 @@ async function runAutoplayLoop(myToken) {
         onTramStopChange();
         scrollPanelTo(document.getElementById('tram-walk-select'));
       });
-      setAutoplayCaption('電停「思案橋」を選択');
+      announceAutoplayStep('電停「思案橋」を選択', 'tramSelect');
       await autoplaySleep(AUTOPLAY_STEP_MS.tramSelect);
       if (myToken !== autoplayLoopToken) return;
 
@@ -3012,7 +3101,7 @@ async function runAutoplayLoop(myToken) {
         scrollPanelTo(document.getElementById('tram-circle-checkbox'), 'nearest');
         map.fitBounds(circleBbox800, { padding: 60, maxZoom: 14, duration: 800 });
       });
-      setAutoplayCaption('電停から半径800mを表示中');
+      announceAutoplayStep('電停から半径800mを表示中', 'circleOn');
       await autoplaySleep(AUTOPLAY_STEP_MS.circleOn);
       if (myToken !== autoplayLoopToken) return;
 
@@ -3023,7 +3112,7 @@ async function runAutoplayLoop(myToken) {
         onTramElevToggle(true);
         scrollPanelTo(document.getElementById('tram-elev-checkbox'), 'nearest');
       });
-      setAutoplayCaption('標高差30m以内の徒歩圏を表示中');
+      announceAutoplayStep('標高差30m以内の徒歩圏を表示中', 'afterElev');
       try { await waitForTramElevReady(shianbashiIdx, 20000); } catch (e) { /* 計算未完了でもこの周は進める */ }
       await autoplaySleep(AUTOPLAY_STEP_MS.afterElev);
       if (myToken !== autoplayLoopToken) return;
@@ -3042,7 +3131,7 @@ async function runAutoplayLoop(myToken) {
         }
         highlightChomeGently('栄町', { extendBbox: circleBbox800, padding: 60, maxZoom: 14 });
       });
-      setAutoplayCaption('「栄町」をハイライト表示中');
+      announceAutoplayStep('「栄町」をハイライト表示中', 'hamamachi');
       await autoplaySleep(AUTOPLAY_STEP_MS.hamamachi);
       if (myToken !== autoplayLoopToken) return;
       autoplaySet(() => {
@@ -3058,7 +3147,7 @@ async function runAutoplayLoop(myToken) {
       autoplaySet(() => {
         map.easeTo({ center: [stop.lon, stop.lat], duration: 700 });
       });
-      setAutoplayCaption('近くの登録物件をタップ表示中');
+      announceAutoplayStep('近くの登録物件をタップ表示中', 'pinTap');
       await autoplaySleep(900);
       if (myToken !== autoplayLoopToken) return;
       const pin = findNearestAkiyaPin(stop.lat, stop.lon);
@@ -3125,6 +3214,7 @@ function startAutoplay(trigger) {
   } else {
     hideAutoplayToast();
   }
+  showAutoplayAudioBtn();
   runAutoplayLoop(autoplayLoopToken);
 }
 
@@ -3135,6 +3225,8 @@ function stopAutoplay(reason) {
   autoplayLoopToken++; // 実行中のループを安全に止める
   updateAutoplayButton();
   setAutoplayMobileCompact(false);
+  stopAutoplayAudio();
+  hideAutoplayAudioBtn();
   sendAutoplayEvent('stop', { stop_reason: reason, duration_sec: durationSec });
   if (reason === 'user_interaction') {
     showAutoplayToast('自動再生を一時停止しました', { showResume:true, duration:8000 });
