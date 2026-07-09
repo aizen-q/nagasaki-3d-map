@@ -768,6 +768,7 @@
 
 <!-- 一時デバッグ用：通知購読の状態を画面に表示するボタン（原因切り分け後に削除予定） -->
 <button id="debug-toggle-btn" onclick="toggleDebugPanel()" style="position:fixed; top:12px; right:56px; z-index:99999; background:#333; color:#fff; border:none; border-radius:6px; padding:6px 10px; font-size:10px;">🐞状態確認</button>
+<button id="debug-resubscribe-btn" onclick="tapDirectResubscribe()" style="position:fixed; top:12px; right:150px; z-index:99999; background:#B34700; color:#fff; border:none; border-radius:6px; padding:6px 10px; font-size:10px;">🔄購読を再試行</button>
 
 <div id="debug-panel" style="position:fixed; bottom:0; left:0; right:0; background:rgba(0,0,0,0.92); color:#7CFC7C; font-size:10px; line-height:1.6; padding:8px 10px; z-index:99999; max-height:160px; overflow-y:auto; font-family:monospace; display:none;"></div>
 
@@ -3509,6 +3510,28 @@ if (!autoplayPrefersReducedMotion) {
         debugLog('OneSignal参照/optInエラー: ' + (e && e.message ? e.message : JSON.stringify(e)));
       }
     });
+  }
+
+  // 検証用：タップした瞬間、他の処理を挟まず最短距離でoptIn()を呼ぶ
+  // （途中に他のawaitを挟むとユーザージェスチャーの鮮度が失われる可能性を検証するため）
+  function tapDirectResubscribe() {
+    const el = document.getElementById('debug-panel');
+    if (el) el.style.display = 'block';
+    debugLog('--- 直接再試行開始（タップ直後） ---');
+    if (!window.OneSignal) {
+      debugLog('window.OneSignal未読込のため中止');
+      return;
+    }
+    window.OneSignal.User.PushSubscription.optIn()
+      .then(function () {
+        debugLog('optIn() resolved');
+        debugLog('optedIn: ' + window.OneSignal.User.PushSubscription.optedIn);
+        debugLog('id: ' + (window.OneSignal.User.PushSubscription.id || 'なし'));
+        debugLog('token: ' + (window.OneSignal.User.PushSubscription.token ? 'あり' : 'なし'));
+      })
+      .catch(function (e) {
+        debugLog('optIn()エラー: ' + (e && e.message ? e.message : JSON.stringify(e)));
+      });
   }
 
   function initNotifyPrompt() {
