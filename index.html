@@ -3466,22 +3466,47 @@ if (!autoplayPrefersReducedMotion) {
     }
     debugLog('window.OneSignalDeferred存在: ' + !!window.OneSignalDeferred);
     debugLog('window.OneSignal存在（SDK読込完了）: ' + !!window.OneSignal);
+
+    // ブラウザ生のPush Subscriptionを直接確認（OneSignalを介さない一次情報）
+    if ('serviceWorker' in navigator) {
+      try {
+        const reg = await navigator.serviceWorker.getRegistration('/nagasaki-3d-map/');
+        if (reg) {
+          const rawSub = await reg.pushManager.getSubscription();
+          debugLog('生pushManager購読: ' + (rawSub ? rawSub.endpoint.substring(0, 50) + '...' : 'なし'));
+        } else {
+          debugLog('該当scopeのSW登録が見つかりません');
+        }
+      } catch (e) {
+        debugLog('生pushManager確認エラー: ' + e.message);
+      }
+    }
+
     withOneSignal(async function (OneSignal) {
       try {
         debugLog('OneSignal SDK到達OK（直接 or deferred）');
-        const optedIn = OneSignal.User.PushSubscription.optedIn;
-        const subId = OneSignal.User.PushSubscription.id;
-        const token = OneSignal.User.PushSubscription.token;
+        let optedIn = OneSignal.User.PushSubscription.optedIn;
+        let subId = OneSignal.User.PushSubscription.id;
+        let token = OneSignal.User.PushSubscription.token;
         debugLog('PushSubscription.optedIn: ' + optedIn);
         debugLog('PushSubscription.id: ' + (subId || 'なし'));
         debugLog('PushSubscription.token: ' + (token ? token.substring(0, 20) + '...' : 'なし'));
-        if (!optedIn) {
+
+        if (optedIn && !subId) {
+          debugLog('optedInなのに未作成 → optOut→optInで再作成を試みます');
+          await OneSignal.User.PushSubscription.optOut();
+          debugLog('optOut完了。再度optIn()を実行します...');
+          await OneSignal.User.PushSubscription.optIn();
+          subId = OneSignal.User.PushSubscription.id;
+          token = OneSignal.User.PushSubscription.token;
+          debugLog('再試行後 id: ' + (subId || 'なし') + ' / token: ' + (token ? 'あり' : 'なし'));
+        } else if (!optedIn) {
           debugLog('optIn()を試行します...');
           await OneSignal.User.PushSubscription.optIn();
           debugLog('optIn()完了。optedIn=' + OneSignal.User.PushSubscription.optedIn);
         }
       } catch (e) {
-        debugLog('OneSignal参照/optInエラー: ' + e.message);
+        debugLog('OneSignal参照/optInエラー: ' + (e && e.message ? e.message : JSON.stringify(e)));
       }
     });
   }
