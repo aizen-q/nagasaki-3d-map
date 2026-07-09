@@ -769,6 +769,7 @@
 <!-- 一時デバッグ用：通知購読の状態を画面に表示するボタン（原因切り分け後に削除予定） -->
 <button id="debug-toggle-btn" onclick="toggleDebugPanel()" style="position:fixed; top:12px; right:56px; z-index:99999; background:#333; color:#fff; border:none; border-radius:6px; padding:6px 10px; font-size:10px;">🐞状態確認</button>
 <button id="debug-resubscribe-btn" onclick="tapDirectResubscribe()" style="position:fixed; top:12px; right:150px; z-index:99999; background:#B34700; color:#fff; border:none; border-radius:6px; padding:6px 10px; font-size:10px;">🔄購読を再試行</button>
+<button id="debug-onesignal-native-btn" onclick="tapOneSignalNativePrompt()" style="position:fixed; top:44px; right:56px; z-index:99999; background:#1B6E6C; color:#fff; border:none; border-radius:6px; padding:6px 10px; font-size:10px;">🔔OneSignal直接許可</button>
 
 <div id="debug-panel" style="position:fixed; bottom:0; left:0; right:0; background:rgba(0,0,0,0.92); color:#7CFC7C; font-size:10px; line-height:1.6; padding:8px 10px; z-index:99999; max-height:160px; overflow-y:auto; font-family:monospace; display:none;"></div>
 
@@ -3510,6 +3511,29 @@ if (!autoplayPrefersReducedMotion) {
         debugLog('OneSignal参照/optInエラー: ' + (e && e.message ? e.message : JSON.stringify(e)));
       }
     });
+  }
+
+  // 検証用：OneSignal組み込みのrequestPermission()を直接呼ぶ
+  // （許可ポップアップ表示〜購読作成までをOneSignal SDK側に一括で任せる）
+  function tapOneSignalNativePrompt() {
+    const el = document.getElementById('debug-panel');
+    if (el) el.style.display = 'block';
+    debugLog('--- OneSignal.Notifications.requestPermission()開始（タップ直後） ---');
+    if (!window.OneSignal) {
+      debugLog('window.OneSignal未読込のため中止');
+      return;
+    }
+    window.OneSignal.Notifications.requestPermission()
+      .then(function () {
+        debugLog('requestPermission() resolved');
+        debugLog('Notification.permission: ' + Notification.permission);
+        debugLog('optedIn: ' + window.OneSignal.User.PushSubscription.optedIn);
+        debugLog('id: ' + (window.OneSignal.User.PushSubscription.id || 'なし'));
+        debugLog('token: ' + (window.OneSignal.User.PushSubscription.token ? 'あり' : 'なし'));
+      })
+      .catch(function (e) {
+        debugLog('requestPermission()エラー: ' + (e && e.message ? e.message : JSON.stringify(e)));
+      });
   }
 
   // 検証用：タップした瞬間、他の処理を挟まず最短距離でoptIn()を呼ぶ
