@@ -3033,6 +3033,17 @@ function toggleAutoplayAudio() {
   autoplayAudioEnabled = !autoplayAudioEnabled;
   if (!autoplayAudioEnabled) stopAutoplayAudio();
   updateAutoplayAudioBtnLabel();
+  sendAudioToggleEvent(autoplayAudioEnabled ? 'on' : 'off');
+}
+
+// AUDIO-DATA-1：「音声つきで見る」ボタンのタップ計測（既存のmap_autoplay等と同じpostMessage方式）
+function sendAudioToggleEvent(state) {
+  try {
+    window.parent.postMessage({
+      event: 'map_audio_toggle',
+      audio_state: state
+    }, 'https://aizen2024.com');
+  } catch (e) {}
 }
 
 function sendAutoplayEvent(action, extra) {
