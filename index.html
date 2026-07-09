@@ -3415,7 +3415,19 @@ if (!autoplayPrefersReducedMotion) {
 
   function initNotifyPrompt() {
     if (!('Notification' in window)) return; // 通知非対応ブラウザ（一部iOS Safari等）
-    if (Notification.permission !== 'default') return; // 既に許可/拒否済み
+    if (Notification.permission === 'granted') {
+      // 既にブラウザ側は許可済みだが、OneSignal側の購読登録がまだの場合があるため追いつかせる
+      // （optIn()は既に購読済みの場合は何もしないため、毎回呼んでも問題ない）
+      if (window.OneSignalDeferred) {
+        window.OneSignalDeferred.push(async function (OneSignal) {
+          try {
+            await OneSignal.User.PushSubscription.optIn();
+          } catch (e) {}
+        });
+      }
+      return; // 許可済みなのでソフトプロンプトは出さない
+    }
+    if (Notification.permission !== 'default') return; // 拒否済み
     if (sessionStorage.getItem('aizen_notify_prompt_dismissed')) return;
     setTimeout(showNotifyPrompt, 30000);
   }
