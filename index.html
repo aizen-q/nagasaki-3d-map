@@ -3441,15 +3441,24 @@ if (!autoplayPrefersReducedMotion) {
   function acceptNotifyPrompt() {
     hideNotifyPrompt();
     sendNotifyPromptEvent('accept_soft');
-    if (window.OneSignalDeferred) {
-      window.OneSignalDeferred.push(async function (OneSignal) {
-        try {
-          await OneSignal.Notifications.requestPermission();
-          const granted = OneSignal.Notifications.permission;
-          sendNotifyPromptEvent(granted ? 'native_granted' : 'native_denied');
-        } catch (e) {}
-      });
-    }
+    if (!('Notification' in window)) return;
+    // iOS Safari対策：OneSignalの内部処理を経由せず、タップ操作から直接
+    // ブラウザ標準のNotification.requestPermission()を呼ぶ（ユーザージェスチャー要件を満たすため）。
+    // 許可された後にOneSignal側の購読登録（optIn）を行う。
+    Notification.requestPermission().then(function (permission) {
+      sendNotifyPromptEvent(permission === 'granted' ? 'native_granted' : 'native_denied');
+      if (permission === 'granted' && window.OneSignalDeferred) {
+        window.OneSignalDeferred.push(async function (OneSignal) {
+          try {
+            await OneSignal.User.PushSubscription.optIn();
+          } catch (e) {
+            sendNotifyPromptEvent('optin_error');
+          }
+        });
+      }
+    }).catch(function (e) {
+      sendNotifyPromptEvent('request_error');
+    });
   }
 
   initNotifyPrompt();
