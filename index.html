@@ -3418,6 +3418,17 @@ if (!autoplayPrefersReducedMotion) {
     } catch (e) {}
   }
 
+  // OneSignal SDKが既に読込済みならwindow.OneSignalを直接使い、
+  // 未読込ならOneSignalDeferredの順番待ちに乗せる（読込完了後にpushしても
+  // 処理されないケースがあるため、直接アクセスを優先する）
+  function withOneSignal(callback) {
+    if (window.OneSignal) {
+      callback(window.OneSignal);
+    } else if (window.OneSignalDeferred) {
+      window.OneSignalDeferred.push(callback);
+    }
+  }
+
   // 一時デバッグ用：画面下部に状態を表示（原因切り分け後に削除予定）
   function debugLog(msg) {
     const el = document.getElementById('debug-panel');
@@ -3455,21 +3466,24 @@ if (!autoplayPrefersReducedMotion) {
     }
     debugLog('window.OneSignalDeferred存在: ' + !!window.OneSignalDeferred);
     debugLog('window.OneSignal存在（SDK読込完了）: ' + !!window.OneSignal);
-    if (window.OneSignalDeferred) {
-      window.OneSignalDeferred.push(async function (OneSignal) {
-        try {
-          debugLog('OneSignal SDK到達OK');
-          const optedIn = OneSignal.User.PushSubscription.optedIn;
-          const subId = OneSignal.User.PushSubscription.id;
-          const token = OneSignal.User.PushSubscription.token;
-          debugLog('PushSubscription.optedIn: ' + optedIn);
-          debugLog('PushSubscription.id: ' + (subId || 'なし'));
-          debugLog('PushSubscription.token: ' + (token ? token.substring(0, 20) + '...' : 'なし'));
-        } catch (e) {
-          debugLog('OneSignal参照エラー: ' + e.message);
+    withOneSignal(async function (OneSignal) {
+      try {
+        debugLog('OneSignal SDK到達OK（直接 or deferred）');
+        const optedIn = OneSignal.User.PushSubscription.optedIn;
+        const subId = OneSignal.User.PushSubscription.id;
+        const token = OneSignal.User.PushSubscription.token;
+        debugLog('PushSubscription.optedIn: ' + optedIn);
+        debugLog('PushSubscription.id: ' + (subId || 'なし'));
+        debugLog('PushSubscription.token: ' + (token ? token.substring(0, 20) + '...' : 'なし'));
+        if (!optedIn) {
+          debugLog('optIn()を試行します...');
+          await OneSignal.User.PushSubscription.optIn();
+          debugLog('optIn()完了。optedIn=' + OneSignal.User.PushSubscription.optedIn);
         }
-      });
-    }
+      } catch (e) {
+        debugLog('OneSignal参照/optInエラー: ' + e.message);
+      }
+    });
   }
 
   function initNotifyPrompt() {
@@ -3477,13 +3491,13 @@ if (!autoplayPrefersReducedMotion) {
     if (Notification.permission === 'granted') {
       // 既にブラウザ側は許可済みだが、OneSignal側の購読登録がまだの場合があるため追いつかせる
       // （optIn()は既に購読済みの場合は何もしないため、毎回呼んでも問題ない）
-      if (window.OneSignalDeferred) {
-        window.OneSignalDeferred.push(async function (OneSignal) {
-          try {
+      withOneSignal(async function (OneSignal) {
+        try {
+          if (!OneSignal.User.PushSubscription.optedIn) {
             await OneSignal.User.PushSubscription.optIn();
-          } catch (e) {}
-        });
-      }
+          }
+        } catch (e) {}
+      });
       return; // 許可済みなのでソフトプロンプトは出さない
     }
     if (Notification.permission !== 'default') return; // 拒否済み
@@ -3518,10 +3532,12 @@ if (!autoplayPrefersReducedMotion) {
     // 許可された後にOneSignal側の購読登録（optIn）を行う。
     Notification.requestPermission().then(function (permission) {
       sendNotifyPromptEvent(permission === 'granted' ? 'native_granted' : 'native_denied');
-      if (permission === 'granted' && window.OneSignalDeferred) {
-        window.OneSignalDeferred.push(async function (OneSignal) {
+      if (permission === 'granted') {
+        withOneSignal(async function (OneSignal) {
           try {
-            await OneSignal.User.PushSubscription.optIn();
+            if (!OneSignal.User.PushSubscription.optedIn) {
+              await OneSignal.User.PushSubscription.optIn();
+            }
           } catch (e) {
             sendNotifyPromptEvent('optin_error');
           }
