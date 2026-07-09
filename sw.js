@@ -5,7 +5,12 @@
 //               地図タイルはネットワーク優先・フォールバックキャッシュ
 // =============================================
 
-const CACHE_VERSION = 'v35';
+// PWA-NOTIFY-1：OneSignal Web Push（既存Service Workerへの統合）
+// index.html側のOneSignal.init()でserviceWorkerPath:"sw.js"を指定しているため、
+// このファイル自体がOneSignalのpush/notificationclickイベントも処理する。
+importScripts("https://cdn.onesignal.com/sdks/web/v16/OneSignalSDKWorker.js");
+
+const CACHE_VERSION = 'v36';
 const SHELL_CACHE   = `shell-${CACHE_VERSION}`;
 const TILE_CACHE    = `tiles-${CACHE_VERSION}`;
 
