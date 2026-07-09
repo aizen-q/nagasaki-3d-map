@@ -766,6 +766,11 @@
   </div>
 </div>
 
+<!-- 一時デバッグ用：通知購読の状態を画面に表示するボタン（原因切り分け後に削除予定） -->
+<button id="debug-toggle-btn" onclick="toggleDebugPanel()" style="position:fixed; top:12px; right:56px; z-index:99999; background:#333; color:#fff; border:none; border-radius:6px; padding:6px 10px; font-size:10px;">🐞状態確認</button>
+
+<div id="debug-panel" style="position:fixed; bottom:0; left:0; right:0; background:rgba(0,0,0,0.92); color:#7CFC7C; font-size:10px; line-height:1.6; padding:8px 10px; z-index:99999; max-height:160px; overflow-y:auto; font-family:monospace; display:none;"></div>
+
 <!-- Legend (デフォルト表示) -->
 <div id="pop-legend" class="visible">
   <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
@@ -3411,6 +3416,60 @@ if (!autoplayPrefersReducedMotion) {
         notify_action: action
       }, 'https://aizen2024.com');
     } catch (e) {}
+  }
+
+  // 一時デバッグ用：画面下部に状態を表示（原因切り分け後に削除予定）
+  function debugLog(msg) {
+    const el = document.getElementById('debug-panel');
+    if (!el) return;
+    const time = new Date().toLocaleTimeString('ja-JP');
+    el.innerHTML += '[' + time + '] ' + msg + '<br>';
+    el.scrollTop = el.scrollHeight;
+  }
+
+  function toggleDebugPanel() {
+    const el = document.getElementById('debug-panel');
+    if (!el) return;
+    const showing = el.style.display !== 'none';
+    el.style.display = showing ? 'none' : 'block';
+    if (!showing) runDebugCheck();
+  }
+
+  async function runDebugCheck() {
+    debugLog('--- 状態確認 ---');
+    debugLog('Notification API対応: ' + ('Notification' in window));
+    if ('Notification' in window) {
+      debugLog('Notification.permission: ' + Notification.permission);
+    }
+    debugLog('serviceWorker対応: ' + ('serviceWorker' in navigator));
+    if ('serviceWorker' in navigator) {
+      try {
+        const regs = await navigator.serviceWorker.getRegistrations();
+        debugLog('SW登録数: ' + regs.length);
+        regs.forEach(function (r, i) {
+          debugLog('  SW' + i + ' scope: ' + r.scope + ' / active: ' + (r.active ? r.active.scriptURL : 'なし'));
+        });
+      } catch (e) {
+        debugLog('SW登録取得エラー: ' + e.message);
+      }
+    }
+    debugLog('window.OneSignalDeferred存在: ' + !!window.OneSignalDeferred);
+    debugLog('window.OneSignal存在（SDK読込完了）: ' + !!window.OneSignal);
+    if (window.OneSignalDeferred) {
+      window.OneSignalDeferred.push(async function (OneSignal) {
+        try {
+          debugLog('OneSignal SDK到達OK');
+          const optedIn = OneSignal.User.PushSubscription.optedIn;
+          const subId = OneSignal.User.PushSubscription.id;
+          const token = OneSignal.User.PushSubscription.token;
+          debugLog('PushSubscription.optedIn: ' + optedIn);
+          debugLog('PushSubscription.id: ' + (subId || 'なし'));
+          debugLog('PushSubscription.token: ' + (token ? token.substring(0, 20) + '...' : 'なし'));
+        } catch (e) {
+          debugLog('OneSignal参照エラー: ' + e.message);
+        }
+      });
+    }
   }
 
   function initNotifyPrompt() {
