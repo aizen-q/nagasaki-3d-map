@@ -16,6 +16,19 @@
   <link href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" rel="stylesheet">
   <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@turf/turf@6/turf.min.js"></script>
+
+  <!-- PWA-NOTIFY-1：OneSignal Web Push SDK -->
+  <script src="https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js" defer></script>
+  <script>
+    window.OneSignalDeferred = window.OneSignalDeferred || [];
+    OneSignalDeferred.push(async function (OneSignal) {
+      await OneSignal.init({
+        appId: "ca2dc9c6-fb18-480c-b54c-39751a89a9d1",
+        serviceWorkerParam: { scope: "/nagasaki-3d-map/" },
+        serviceWorkerPath: "sw.js"
+      });
+    });
+  </script>
   <style>
     :root {
       /* MAP-FLOW-1 UX改善（v2）：スマホでパネルが地図を覆いすぎないよう55vh→46vhに縮小 */
@@ -265,6 +278,34 @@
     @media(max-width:600px) {
       /* view-toggle（地図/航空写真ボタン）の上に重ならない位置に配置 */
       #autoplay-toast { bottom:calc(var(--mp-panel-h) + 60px); font-size:11px; padding:10px 12px; }
+    }
+
+    /* PWA-NOTIFY-1：通知許可のソフトプロンプト（ページ滞在30秒後に表示） */
+    #notify-prompt {
+      position:absolute; left:50%; bottom:16px; transform:translateX(-50%) translateY(12px);
+      z-index:310; max-width:calc(100vw - 32px); width:340px;
+      background:rgba(255,255,255,0.98); color:#333; border-radius:12px;
+      padding:14px 16px; box-shadow:0 6px 20px rgba(0,0,0,0.22);
+      border:1.5px solid #4A6741;
+      opacity:0; pointer-events:none;
+      transition:opacity 0.25s ease, transform 0.25s ease;
+    }
+    #notify-prompt.visible { opacity:1; transform:translateX(-50%) translateY(0); pointer-events:auto; }
+    #notify-prompt .np-title { font-size:13px; font-weight:700; color:#4A6741; margin-bottom:4px; }
+    #notify-prompt .np-body { font-size:11.5px; color:#555; line-height:1.6; margin-bottom:10px; }
+    #notify-prompt .np-actions { display:flex; gap:8px; }
+    #notify-prompt .np-accept {
+      flex:1; background:#1B6E6C; color:#fff; border:none; border-radius:8px;
+      padding:8px 10px; font-size:12px; font-weight:700; cursor:pointer;
+    }
+    #notify-prompt .np-accept:hover { background:#155452; }
+    #notify-prompt .np-decline {
+      flex-shrink:0; background:#fff; color:#888; border:1px solid #ddd; border-radius:8px;
+      padding:8px 12px; font-size:12px; cursor:pointer;
+    }
+    #notify-prompt .np-decline:hover { border-color:#bbb; color:#555; }
+    @media(max-width:600px) {
+      #notify-prompt { bottom:calc(var(--mp-panel-h) + 60px); width:calc(100vw - 32px); }
     }
 
     /* Popup */
@@ -713,6 +754,16 @@
   <span class="at-msg" id="autoplay-toast-msg"></span>
   <button class="at-resume" id="autoplay-toast-resume" onclick="resumeAutoplayFromToast()">&#x25B6; 続きを見る</button>
   <button class="at-close" onclick="hideAutoplayToast()" title="閉じる" aria-label="閉じる">&times;</button>
+</div>
+
+<!-- PWA-NOTIFY-1：通知許可のソフトプロンプト -->
+<div id="notify-prompt">
+  <div class="np-title">📮 新着情報をお知らせしましょうか？</div>
+  <div class="np-body">空き家の新着情報やエリアの更新を、ブラウザ通知でお届けします。メールアドレス等の登録は不要です。</div>
+  <div class="np-actions">
+    <button class="np-accept" onclick="acceptNotifyPrompt()">知らせてほしい</button>
+    <button class="np-decline" onclick="declineNotifyPrompt()">今はいい</button>
+  </div>
 </div>
 
 <!-- Legend (デフォルト表示) -->
@@ -3333,7 +3384,7 @@ if (!autoplayPrefersReducedMotion) {
 </script>
 
 <!-- PWA: Service Worker 登録 -->
-<!-- ※ sw.js の CACHE_VERSION を毎回1上げてからアップロードすること（現在 v21） -->
+<!-- ※ sw.js の CACHE_VERSION を毎回1上げてからアップロードすること（現在 v36） -->
 <script>
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', function () {
@@ -3347,6 +3398,61 @@ if (!autoplayPrefersReducedMotion) {
         });
     });
   }
+</script>
+
+<!-- PWA-NOTIFY-1：通知許可のソフトプロンプト制御 -->
+<!-- 表示条件：Notification APIが未回答（default）かつ、当該セッション内で未表示・未却下の場合のみ、
+     ページ滞在30秒後に表示する。GTM計測は既存のmap_autoplay等と同じpostMessage方式。 -->
+<script>
+  function sendNotifyPromptEvent(action) {
+    try {
+      window.parent.postMessage({
+        event: 'pwa_notify_prompt',
+        notify_action: action
+      }, 'https://aizen2024.com');
+    } catch (e) {}
+  }
+
+  function initNotifyPrompt() {
+    if (!('Notification' in window)) return; // 通知非対応ブラウザ（一部iOS Safari等）
+    if (Notification.permission !== 'default') return; // 既に許可/拒否済み
+    if (sessionStorage.getItem('aizen_notify_prompt_dismissed')) return;
+    setTimeout(showNotifyPrompt, 30000);
+  }
+
+  function showNotifyPrompt() {
+    if (Notification.permission !== 'default') return; // 30秒の間に他経路で回答済みの場合
+    const el = document.getElementById('notify-prompt');
+    if (el) el.classList.add('visible');
+    sendNotifyPromptEvent('shown');
+  }
+
+  function hideNotifyPrompt() {
+    const el = document.getElementById('notify-prompt');
+    if (el) el.classList.remove('visible');
+  }
+
+  function declineNotifyPrompt() {
+    hideNotifyPrompt();
+    sessionStorage.setItem('aizen_notify_prompt_dismissed', '1');
+    sendNotifyPromptEvent('decline_soft');
+  }
+
+  function acceptNotifyPrompt() {
+    hideNotifyPrompt();
+    sendNotifyPromptEvent('accept_soft');
+    if (window.OneSignalDeferred) {
+      window.OneSignalDeferred.push(async function (OneSignal) {
+        try {
+          await OneSignal.Notifications.requestPermission();
+          const granted = OneSignal.Notifications.permission;
+          sendNotifyPromptEvent(granted ? 'native_granted' : 'native_denied');
+        } catch (e) {}
+      });
+    }
+  }
+
+  initNotifyPrompt();
 </script>
 
 </body>
