@@ -567,6 +567,21 @@
     .viewspot-marker.aerial-pin-enter {
       animation: aerialPinDrop 0.5s ease-out;
     }
+
+    /* ━━━ LITE-MODE-1：空き家空き地バンク機能限定版で非表示にする要素 ━━━ */
+    body.lite-mode #pop-section,
+    body.lite-mode #yoto-section,
+    body.lite-mode #tram-walk-section,
+    body.lite-mode #pop-legend,
+    body.lite-mode #yoto-legend,
+    body.lite-mode #autoplay-btn,
+    body.lite-mode #autoplay-caption,
+    body.lite-mode #autoplay-audio-btn,
+    body.lite-mode #autoplay-toast,
+    body.lite-mode #notify-prompt,
+    body.lite-mode #aizen-link {
+      display: none !important;
+    }
   </style>
 </head>
 <body>
@@ -859,6 +874,22 @@
 <button id="guide-toggle" onclick="expandGuide()">&#x1F4CD; 操作方法</button>
 
 <script>
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// LITE-MODE-1：空き家空き地バンク機能限定版
+// URLに ?mode=lite を付けると、空き家バンク機能のみを残し、
+// それ以外（人口増減・用途地域・路面電車徒歩圏・体験スポット・
+// 自動再生・プッシュ通知・あいぜん不動産リンク）を非表示・無効化する。
+// 通常版・限定版とも同一ファイルで管理し、更新は1回で両方に反映される。
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+const IS_LITE_MODE = new URLSearchParams(window.location.search).get('mode') === 'lite';
+if (IS_LITE_MODE) {
+  document.body.classList.add('lite-mode');
+  const popChkInit = document.getElementById('pop-checkbox');
+  const akiyaChkInit = document.getElementById('akiya-checkbox');
+  if (popChkInit) popChkInit.checked = false;
+  if (akiyaChkInit) akiyaChkInit.checked = true;
+}
+
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // 体験スポット（眺望360°・鳥の目動画）ピン
 // 空き家バンクのような排他トグルは持たず、常時表示。
@@ -1219,7 +1250,7 @@ const AKIYA_URL      = 'https://aizen2024.com/wp-content/uploads/2026/06/akiya-1
 const AKIYA_RATE_URL = 'https://aizen2024.com/wp-content/uploads/2026/06/akiya_rate.geojson';
 
 let akiyaLayerReady = false;
-let pendingAkiyaVisibility = false;
+let pendingAkiyaVisibility = IS_LITE_MODE;  // 限定版はデフォルトで空き家バンクをON
 let akiyaCurrentPopup = null;
 let akiyaIconsRegistered = false; // map.addImageで登録済みのアイコンID集合の初期化フラグ
 let akiyaPinFeatures = []; // 価格・徒歩圏フィルタ用に、生成したピンfeatureを保持
@@ -2291,7 +2322,7 @@ map.addControl(new maplibregl.ScaleControl({ unit: 'metric' }), 'bottom-right');
 let townGeoJSON = null;
 let selectedTown = null;
 let layersReady = false;
-let pendingPopVisibility = true;  // デフォルトON
+let pendingPopVisibility = !IS_LITE_MODE;  // 通常版はデフォルトON、限定版はOFF
 let yotoLayerReady = false;
 let pendingYotoVisibility = false;
 const YOTO_URL = 'https://aizen2024.com/wp-content/uploads/2026/06/nagasaki_yoto_chiiki.geojson';
@@ -2342,8 +2373,10 @@ map.on('load', () => {
   });
 
   loadTownData();
-  loadViewspots();
-  loadTramStops();
+  if (!IS_LITE_MODE) {
+    loadViewspots();
+    loadTramStops();
+  }
   document.getElementById('loading').style.display = 'none';
   setTimeout(collapseGuide, 10000);
 });
@@ -2646,8 +2679,8 @@ function flyToArea(areaName, btn) {
 
   const info = document.getElementById('area-info');
   info.classList.add('active');
-  document.getElementById('area-name').textContent = areaName + '\uff08' + matches.length + '\u753a\uff09';
-  document.getElementById('area-sub').textContent  = '3D\u5730\u5f62\u4e0a\u3067\u30cf\u30a4\u30e9\u30a4\u30c8\u8868\u793a\u4e2d \u2014 \u30c9\u30e9\u30c3\u30b0\u3067\u8996\u70b9\u5909\u66f4\u53ef';
+  document.getElementById('area-name').textContent = areaName + '（' + matches.length + '町）';
+  document.getElementById('area-sub').textContent  = '3D地形上でハイライト表示中 — ドラッグで視点変更可';
   document.getElementById('area-pop').textContent  = '';
 
   selectedTown = areaName;
@@ -3386,7 +3419,7 @@ document.querySelectorAll('#view-toggle button, .quick-btn, #toggle-btn, #pc-tog
 // prefers-reduced-motion：自動開始せず、ボタンから明示的に開始してもらう
 const autoplayPrefersReducedMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-if (!autoplayPrefersReducedMotion) {
+if (!autoplayPrefersReducedMotion && !IS_LITE_MODE) {
   setTimeout(() => startAutoplay('page_load'), 1500);
 } else {
   updateAutoplayButton();
@@ -3497,7 +3530,7 @@ if (!autoplayPrefersReducedMotion) {
     });
   }
 
-  initNotifyPrompt();
+  if (!IS_LITE_MODE) initNotifyPrompt();
 </script>
 
 </body>
