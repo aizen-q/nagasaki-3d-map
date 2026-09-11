@@ -202,6 +202,15 @@
       line-height:1.3; white-space:nowrap;
     }
     #aizen-link:hover { background:#3a5334; }
+
+    /* MAP-UI-FIX-1（260911）：一般社団法人サイト（lite-mode）でのみ、
+       指定支援法人としての肩書きを表示する。通常版（aizen2024.com）では非表示。 */
+    #lite-badge {
+      display:none;
+      font-size:10px; color:#4A6741; font-weight:700;
+      margin-top:2px; line-height:1.4;
+    }
+    body.lite-mode #lite-badge { display:block; }
     @media (display-mode: standalone) {
       #aizen-link { display:flex; }
     }
@@ -418,7 +427,10 @@
     /* 面塗り凡例（左下） */
     #akiya-legend {
       display:none;
-      position:absolute; bottom:12px; left:12px; z-index:100;
+      /* MAP-UI-FIX-1（260911）：#panel（左のサイドパネル）の下端と重なって、
+         価格・徒歩圏フィルタの説明文などが隠れる不具合があったため、
+         パネル幅(282px)の外側（左12px + 幅282px + 余白12px）に位置をずらした */
+      position:absolute; bottom:12px; left:306px; z-index:100;
       background:rgba(255,255,255,0.97); border-radius:10px;
       box-shadow:0 2px 12px rgba(0,0,0,0.15);
       padding:12px 14px; min-width:200px;
@@ -619,6 +631,7 @@
     <div>
       <h1>長崎市 3Dエリアマップ</h1>
       <span class="sub">地形から選ぶ移住先</span>
+      <div id="lite-badge">空家等管理活用支援法人　一般社団法人長崎出島まちづくり研究所</div>
     </div>
     <button id="panel-close" onclick="togglePanel()">&#x00D7;</button>
   </div>
@@ -687,7 +700,7 @@
           <span class="toggle-thumb"></span>
         </label>
       </div>
-      <div class="toggle-note">面塗り：空き家発生率10%以上の町（空家等対策計画 R8.3）</div>
+      <div class="toggle-note">面塗り：空き家発生率10%以上の町（空家等対策計画 R8.3・市内全域調査のうち、10%超と個別に示された町のみを表示）</div>
       <div class="toggle-note">ピン：空き家バンク登録物件（市公開情報）</div>
     </div>
 
@@ -834,7 +847,7 @@
   </div>
   <div class="legend-row"><div class="legend-swatch" style="background:#FFCDD2"></div><span class="legend-label">10&#x301C;15%</span></div>
   <div class="legend-row"><div class="legend-swatch" style="background:#C62828"></div><span class="legend-label">15%以上</span></div>
-  <div class="legend-note">出典: 長崎市空家等対策計画（R8.3）P14-15</div>
+  <div class="legend-note">10%超と示された町のみを表示（調査自体は市内全域が対象）<br>出典: 長崎市空家等対策計画（R8.3）P14-15</div>
 </div>
 
 <!-- バンク登録物件 ピン Legend -->
@@ -850,7 +863,7 @@
   <div class="akiya-pin-row"><div class="akiya-pin-sample" style="background:#888;">売</div><span class="legend-label">売買希望</span></div>
   <div class="akiya-pin-row"><div class="akiya-pin-sample" style="background:#888;">賃</div><span class="legend-label">賃貸希望</span></div>
   <div class="akiya-pin-row"><div class="akiya-pin-sample" style="background:#888;">両</div><span class="legend-label">売買・賃貸どちらも可</span></div>
-  <div class="legend-note">2026年6月12日時点のデータ<br>出典: 長崎市空き家空き地バンク（公開情報・町丁目単位）<br>クリックで市公式ページへ（番地等は非公開）</div>
+  <div class="legend-note">2026年9月10日時点のデータ<br>出典: 長崎市空き家空き地バンク（公開情報・町丁目単位）<br>クリックで市公式ページへ（番地等は非公開）</div>
 </div>
 
 <!-- Guide -->
@@ -890,6 +903,13 @@ if (IS_LITE_MODE) {
   if (popChkInit) popChkInit.checked = false;
   if (akiyaChkInit) akiyaChkInit.checked = true;
 }
+
+// MAP-UI-FIX-1（260911）：#guide（操作ガイドパネル）はデフォルトで表示されたままで、
+// #akiya-pin-legend（空き家バンク登録物件の凡例、bottom:100px/right:12px）と
+// #guide（bottom:12px/right:12px）の間隔が凡例の高さより狭く、重なって文字が
+// 読めなくなっていた。モバイル版と同じ「最初は畳んだ状態（📍操作方法ボタンのみ表示）」
+// に統一し、クリックで開く形にすることで、他のパネルとの重なりを避ける。
+collapseGuide();
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // 体験スポット（眺望360°・鳥の目動画）ピン
