@@ -693,7 +693,7 @@
     <!-- Akiya bank toggle（用途地域トグルの直後に追加） -->
     <div id="akiya-section">
       <div class="toggle-row">
-        <span class="toggle-label">空き家バンクを表示</span>
+        <span class="toggle-label">空き家発生率10%以上を表示</span>
         <label class="toggle-switch">
           <input type="checkbox" id="akiya-checkbox" onchange="onAkiyaToggle(this.checked)">
           <span class="toggle-track"></span>
@@ -701,7 +701,7 @@
         </label>
       </div>
       <div class="toggle-note">面塗り：空き家発生率10%以上の町（空家等対策計画 R8.3・市内全域調査のうち、10%超と個別に示された町のみを表示）</div>
-      <div class="toggle-note">ピン：空き家バンク登録物件（市公開情報）</div>
+      <div class="toggle-note">ピン：空き家バンク登録物件（市公開情報・このトグルの状態に関わらず常時表示）</div>
     </div>
 
     <!-- Tram walk-distance section -->
@@ -1272,8 +1272,9 @@ function hideAerialRoute() {
 const AKIYA_URL      = 'https://aizen2024.com/wp-content/uploads/2026/08/akiya-1.geojson';
 const AKIYA_RATE_URL = 'https://aizen2024.com/wp-content/uploads/2026/06/akiya_rate.geojson';
 
-let akiyaLayerReady = false;
-let pendingAkiyaVisibility = IS_LITE_MODE;  // 限定版はデフォルトで空き家バンクをON
+let akiyaRateReady = false;   // 面塗り（空き家発生率10%以上）レイヤーの初回読み込み完了フラグ
+let akiyaPinsReady = false;   // ピン・不確実性円レイヤーの初回読み込み完了フラグ（トグルに非連動、常時表示）
+let pendingAkiyaVisibility = IS_LITE_MODE;  // 限定版はデフォルトで面塗りをON（ピンは常時表示のため対象外）
 let akiyaCurrentPopup = null;
 let akiyaIconsRegistered = false; // map.addImageで登録済みのアイコンID集合の初期化フラグ
 let akiyaPinFeatures = []; // 価格・徒歩圏フィルタ用に、生成したピンfeatureを保持
@@ -1289,22 +1290,17 @@ const AKIYA_TORIHIKI_TEXT  = { sale: '売買希望', rent: '賃貸希望', both:
 const AKIYA_KUBUN_TEXT     = { building: '空き家（建物あり）', land: '空き地（土地のみ）' };
 const AKIYA_KUBUN_COLOR    = { building: '#1a6b3c', land: '#C2841C' };
 
-function loadAkiyaLayer() {
-  if (akiyaLayerReady) {
+function loadAkiyaRateLayer() {
+  if (akiyaRateReady) {
     // 2回目以降：既存レイヤーを再表示するだけ
     map.setLayoutProperty('akiya-rate-fill', 'visibility', 'visible');
-    map.setLayoutProperty('akiya-pin-radius-fill', 'visibility', 'visible');
-    map.setLayoutProperty('akiya-pin-radius-outline', 'visibility', 'visible');
-    map.setLayoutProperty('akiya-pins-icon', 'visibility', 'visible');
-    map.setLayoutProperty('akiya-pins-badge-icon', 'visibility', 'visible');
     map.setPaintProperty('town-outline', 'line-color', '#fff');
     map.setPaintProperty('town-outline', 'line-opacity', 0.8);
     document.getElementById('akiya-legend').classList.add('visible');
-    document.getElementById('akiya-pin-legend').classList.add('visible');
     return;
   }
 
-  // --- ① 面塗り（空き家発生率） ---
+  // --- 面塗り（空き家発生率） ---
   fetch(AKIYA_RATE_URL)
     .then(r => { if (!r.ok) throw new Error('fetch failed: akiya_rate'); return r.json(); })
     .then(geojson => {
@@ -1359,10 +1355,18 @@ function loadAkiyaLayer() {
       map.on('mouseleave', 'akiya-rate-fill', () => { if (!selectedTown) map.getCanvas().style.cursor = ''; });
 
       document.getElementById('akiya-legend').classList.add('visible');
+      akiyaRateReady = true;
     })
     .catch(err => console.error('Akiya rate GeoJSON error:', err));
+}
 
-  // --- ② ピン（バンク登録物件） ---
+// ピンは排他トグル（空き家発生率10%以上／人口増減／用途地域）の状態に関わらず常時表示。
+// 体験スポットピン（loadViewspots）と同じ「排他トグルを持たず常時表示」パターン。
+// 初回読み込みは軽くない処理（地点ごとにturf.circleを5枚生成）のため、
+// マップ読み込み完了直後に1回だけ自動実行される（ensureAkiyaPinsLoaded参照）。
+function loadAkiyaPinsLayer() {
+  if (akiyaPinsReady) return;
+
   // 座標は「町丁目名」のジオコーディング結果であり、特定の建物位置ではない。
   // 同一町丁目の物件は完全に同一座標を持つため、まず座標単位でグループ化し、
   // 1地点＝1ピン（複数件は件数バッジ）として描画する。
@@ -1617,9 +1621,14 @@ function loadAkiyaLayer() {
       }
 
       document.getElementById('akiya-pin-legend').classList.add('visible');
-      akiyaLayerReady = true;
+      akiyaPinsReady = true;
     })
     .catch(err => console.error('Akiya pins GeoJSON error:', err));
+}
+
+// ピンレイヤーの初回読み込みをトリガーする。何度呼んでも安全（2回目以降は内部で即return）。
+function ensureAkiyaPinsLoaded() {
+  loadAkiyaPinsLayer();
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -1665,11 +1674,11 @@ function getActiveTramWalkRing() {
 }
 
 function applyAkiyaFilter() {
-  const akiyaChk = document.getElementById('akiya-checkbox');
   const statusEl = document.getElementById('akiya-filter-status');
 
-  if (!akiyaChk.checked || !akiyaLayerReady) {
-    statusEl.textContent = '先に「空き家バンクを表示」をONにしてください。';
+  if (!akiyaPinsReady) {
+    ensureAkiyaPinsLoaded();
+    statusEl.textContent = '空き家バンク登録物件を読み込み中です。少し待ってから再度お試しください。';
     statusEl.style.color = '#C62828';
     return;
   }
@@ -1711,8 +1720,11 @@ function resetAkiyaFilter() {
 }
 
 function onAkiyaToggle(checked) {
+  // ── ピンは排他トグルの状態に関わらず常時表示。まだ未読み込みならここで1回だけ読み込む ──
+  ensureAkiyaPinsLoaded();
+
   if (checked) {
-    // ── 排他制御：人口増減・用途地域をOFFにする ──
+    // ── 排他制御：人口増減・用途地域をOFFにする（面塗りのみが対象。ピンは対象外） ──
     const popChk = document.getElementById('pop-checkbox');
     if (popChk && popChk.checked) {
       popChk.checked = false;
@@ -1725,25 +1737,20 @@ function onAkiyaToggle(checked) {
     }
 
     if (layersReady) {
-      loadAkiyaLayer();
+      loadAkiyaRateLayer();
     } else {
       pendingAkiyaVisibility = true;
     }
   } else {
     document.getElementById('akiya-legend').classList.remove('visible');
-    document.getElementById('akiya-pin-legend').classList.remove('visible');
 
     if (akiyaCurrentPopup) {
       akiyaCurrentPopup.remove();
       akiyaCurrentPopup = null;
     }
 
-    if (akiyaLayerReady) {
+    if (akiyaRateReady) {
       map.setLayoutProperty('akiya-rate-fill', 'visibility', 'none');
-      map.setLayoutProperty('akiya-pin-radius-fill', 'visibility', 'none');
-      map.setLayoutProperty('akiya-pin-radius-outline', 'visibility', 'none');
-      map.setLayoutProperty('akiya-pins-icon', 'visibility', 'none');
-      map.setLayoutProperty('akiya-pins-badge-icon', 'visibility', 'none');
 
       const popOn  = document.getElementById('pop-checkbox').checked;
       const yotoOn = document.getElementById('yoto-checkbox').checked;
@@ -2483,8 +2490,11 @@ function loadTownData() {
         loadYotoLayer();
       }
       if (pendingAkiyaVisibility) {
-        loadAkiyaLayer();
+        loadAkiyaRateLayer();
       }
+      // ピンはトグル状態に関わらず常時表示。通常モード・限定版のどちらでも
+      // マップ起動後すぐに1回だけ読み込む（loadViewspots()と同じ「常時表示」パターン）。
+      ensureAkiyaPinsLoaded();
 
       if (pendingPopVisibility) {
         map.setLayoutProperty('pop-fill', 'visibility', 'visible');
@@ -3168,12 +3178,23 @@ function resetToOpeningState() {
   });
 }
 
-function waitForAkiyaReady(timeoutMs) {
+function waitForAkiyaRateReady(timeoutMs) {
   return new Promise((resolve, reject) => {
     const start = Date.now();
     (function poll() {
-      if (akiyaLayerReady) return resolve();
-      if (Date.now() - start > timeoutMs) return reject(new Error('akiya layer timeout'));
+      if (akiyaRateReady) return resolve();
+      if (Date.now() - start > timeoutMs) return reject(new Error('akiya rate layer timeout'));
+      setTimeout(poll, 200);
+    })();
+  });
+}
+
+function waitForAkiyaPinsReady(timeoutMs) {
+  return new Promise((resolve, reject) => {
+    const start = Date.now();
+    (function poll() {
+      if (akiyaPinsReady) return resolve();
+      if (Date.now() - start > timeoutMs) return reject(new Error('akiya pins timeout'));
       setTimeout(poll, 200);
     })();
   });
@@ -3231,14 +3252,14 @@ async function runAutoplayLoop(myToken) {
     await autoplaySleepWithAudio(AUTOPLAY_STEP_MS.popOff, 'popOff');
     if (myToken !== autoplayLoopToken) return;
 
-    // 4. 空き家バンクを表示ON
+    // 4. 空き家発生率10%以上の面塗りを表示ON（ピンは既にマップ起動直後から常時表示済み）
     autoplaySet(() => {
       document.getElementById('akiya-checkbox').checked = true;
       onAkiyaToggle(true);
       scrollPanelTo(document.getElementById('akiya-checkbox'));
     });
-    announceAutoplayStep('空き家バンク登録物件を表示中', 'akiyaOn');
-    try { await waitForAkiyaReady(8000); } catch (e) { /* 読み込み失敗時はこの周は進める */ }
+    announceAutoplayStep('空き家発生率10%以上のエリアを表示中', 'akiyaOn');
+    try { await waitForAkiyaRateReady(8000); } catch (e) { /* 読み込み失敗時はこの周は進める */ }
     await autoplaySleepWithAudio(AUTOPLAY_STEP_MS.akiyaOn, 'akiyaOn');
     if (myToken !== autoplayLoopToken) return;
 
@@ -3314,6 +3335,7 @@ async function runAutoplayLoop(myToken) {
         map.easeTo({ center: [stop.lon, stop.lat], duration: 700 });
       });
       announceAutoplayStep('近くの登録物件をタップ表示中', 'pinTap');
+      try { await waitForAkiyaPinsReady(8000); } catch (e) { /* 読み込み未完了でもこの周は進める */ }
       await autoplaySleep(900);
       if (myToken !== autoplayLoopToken) return;
       const pin = findNearestAkiyaPin(stop.lat, stop.lon);
