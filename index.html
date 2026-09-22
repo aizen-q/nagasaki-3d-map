@@ -121,11 +121,13 @@
     #pop-checkbox:checked + .toggle-track,
     #yoto-checkbox:checked + .toggle-track,
     #akiya-checkbox:checked + .toggle-track,
+    #household-checkbox:checked + .toggle-track,
     #tram-circle-checkbox:checked + .toggle-track,
     #tram-elev-checkbox:checked + .toggle-track { background:#1B6E6C; }
     #pop-checkbox:checked ~ .toggle-thumb,
     #yoto-checkbox:checked ~ .toggle-thumb,
     #akiya-checkbox:checked ~ .toggle-thumb,
+    #household-checkbox:checked ~ .toggle-thumb,
     #tram-circle-checkbox:checked ~ .toggle-thumb,
     #tram-elev-checkbox:checked ~ .toggle-thumb { transform:translateX(20px); }
     #pop-note { font-size:10px; color:#999; margin-top:4px; }
@@ -2385,20 +2387,20 @@ const HOUSEHOLD_FILL_EXPR = {
   single: [
     'case',
     ['<', ['get', 'eld_single'], 0], '#BDBDBD',
-    ['>=', ['get', 'eld_single'], 400], '#4E342E',
-    ['>=', ['get', 'eld_single'], 250], '#795548',
-    ['>=', ['get', 'eld_single'], 150], '#A1887F',
-    ['>=', ['get', 'eld_single'],  75], '#D7CCC8',
-    '#EFEBE9'
+    ['>=', ['get', 'eld_single'], 400], '#4A148C',
+    ['>=', ['get', 'eld_single'], 250], '#7B1FA2',
+    ['>=', ['get', 'eld_single'], 150], '#AB47BC',
+    ['>=', ['get', 'eld_single'],  75], '#CE93D8',
+    '#F3E5F5'
   ],
   couple: [
     'case',
     ['<', ['get', 'eld_couple'], 0], '#BDBDBD',
-    ['>=', ['get', 'eld_couple'], 400], '#4E342E',
-    ['>=', ['get', 'eld_couple'], 250], '#795548',
-    ['>=', ['get', 'eld_couple'], 150], '#A1887F',
-    ['>=', ['get', 'eld_couple'],  75], '#D7CCC8',
-    '#EFEBE9'
+    ['>=', ['get', 'eld_couple'], 400], '#4A148C',
+    ['>=', ['get', 'eld_couple'], 250], '#7B1FA2',
+    ['>=', ['get', 'eld_couple'], 150], '#AB47BC',
+    ['>=', ['get', 'eld_couple'],  75], '#CE93D8',
+    '#F3E5F5'
   ]
 };
 
@@ -3079,8 +3081,14 @@ function closeHouseholdLegend() {
   document.getElementById('household-legend').classList.remove('visible');
 }
 
+const HOUSEHOLD_LEGEND_TITLE = {
+  rate:   '世帯数増減率（H27&#x2192;R2）',
+  single: '65歳以上の単独世帯数',
+  couple: '高齢夫婦のみの世帯数（夫65歳以上・妻60歳以上）'
+};
+
 const HOUSEHOLD_LEGEND_HTML = {
-  rate: '<h3 id="household-legend-title" style="margin:0;">世帯数増減率（H27&#x2192;R2）</h3>' +
+  rate:
     '<div class="legend-row"><div class="legend-swatch" style="background:#B71C1C"></div><span class="legend-label">+10%以上（大幅増加）</span></div>' +
     '<div class="legend-row"><div class="legend-swatch" style="background:#EF5350"></div><span class="legend-label">+3&#x301C;+10%（増加）</span></div>' +
     '<div class="legend-row"><div class="legend-swatch" style="background:#FFCDD2"></div><span class="legend-label">0&#x301C;+3%（微増）</span></div>' +
@@ -3090,20 +3098,20 @@ const HOUSEHOLD_LEGEND_HTML = {
     '<div class="legend-row"><div class="legend-swatch" style="background:#1565C0"></div><span class="legend-label">-10%以下（大幅減少）</span></div>' +
     '<hr class="legend-divider">' +
     '<div class="legend-row"><div class="legend-swatch" style="background:#BDBDBD"></div><span class="legend-label">データなし</span></div>',
-  single: '<h3 id="household-legend-title" style="margin:0;">65歳以上の単独世帯数</h3>' +
-    '<div class="legend-row"><div class="legend-swatch" style="background:#4E342E"></div><span class="legend-label">400世帯以上</span></div>' +
-    '<div class="legend-row"><div class="legend-swatch" style="background:#795548"></div><span class="legend-label">250&#x301C;399世帯</span></div>' +
-    '<div class="legend-row"><div class="legend-swatch" style="background:#A1887F"></div><span class="legend-label">150&#x301C;249世帯</span></div>' +
-    '<div class="legend-row"><div class="legend-swatch" style="background:#D7CCC8"></div><span class="legend-label">75&#x301C;149世帯</span></div>' +
-    '<div class="legend-row"><div class="legend-swatch" style="background:#EFEBE9"></div><span class="legend-label">1&#x301C;74世帯</span></div>' +
+  single:
+    '<div class="legend-row"><div class="legend-swatch" style="background:#4A148C"></div><span class="legend-label">400世帯以上</span></div>' +
+    '<div class="legend-row"><div class="legend-swatch" style="background:#7B1FA2"></div><span class="legend-label">250&#x301C;399世帯</span></div>' +
+    '<div class="legend-row"><div class="legend-swatch" style="background:#AB47BC"></div><span class="legend-label">150&#x301C;249世帯</span></div>' +
+    '<div class="legend-row"><div class="legend-swatch" style="background:#CE93D8"></div><span class="legend-label">75&#x301C;149世帯</span></div>' +
+    '<div class="legend-row"><div class="legend-swatch" style="background:#F3E5F5"></div><span class="legend-label">1&#x301C;74世帯</span></div>' +
     '<hr class="legend-divider">' +
     '<div class="legend-row"><div class="legend-swatch" style="background:#BDBDBD"></div><span class="legend-label">データなし</span></div>',
-  couple: '<h3 id="household-legend-title" style="margin:0;">高齢夫婦のみの世帯数</h3>' +
-    '<div class="legend-row"><div class="legend-swatch" style="background:#4E342E"></div><span class="legend-label">400世帯以上</span></div>' +
-    '<div class="legend-row"><div class="legend-swatch" style="background:#795548"></div><span class="legend-label">250&#x301C;399世帯</span></div>' +
-    '<div class="legend-row"><div class="legend-swatch" style="background:#A1887F"></div><span class="legend-label">150&#x301C;249世帯</span></div>' +
-    '<div class="legend-row"><div class="legend-swatch" style="background:#D7CCC8"></div><span class="legend-label">75&#x301C;149世帯</span></div>' +
-    '<div class="legend-row"><div class="legend-swatch" style="background:#EFEBE9"></div><span class="legend-label">1&#x301C;74世帯</span></div>' +
+  couple:
+    '<div class="legend-row"><div class="legend-swatch" style="background:#4A148C"></div><span class="legend-label">400世帯以上</span></div>' +
+    '<div class="legend-row"><div class="legend-swatch" style="background:#7B1FA2"></div><span class="legend-label">250&#x301C;399世帯</span></div>' +
+    '<div class="legend-row"><div class="legend-swatch" style="background:#AB47BC"></div><span class="legend-label">150&#x301C;249世帯</span></div>' +
+    '<div class="legend-row"><div class="legend-swatch" style="background:#CE93D8"></div><span class="legend-label">75&#x301C;149世帯</span></div>' +
+    '<div class="legend-row"><div class="legend-swatch" style="background:#F3E5F5"></div><span class="legend-label">1&#x301C;74世帯</span></div>' +
     '<hr class="legend-divider">' +
     '<div class="legend-row"><div class="legend-swatch" style="background:#BDBDBD"></div><span class="legend-label">データなし</span></div>'
 };
@@ -3113,8 +3121,10 @@ function onHouseholdMetricChange() {
   if (layersReady) {
     map.setPaintProperty('household-fill', 'fill-color', HOUSEHOLD_FILL_EXPR[metric]);
   }
+  document.getElementById('household-legend-title').innerHTML = HOUSEHOLD_LEGEND_TITLE[metric];
   document.getElementById('household-legend-rows').innerHTML = HOUSEHOLD_LEGEND_HTML[metric];
 }
+
 
 function onHouseholdToggle(checked) {
   const legend = document.getElementById('household-legend');
