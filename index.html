@@ -2837,11 +2837,32 @@ function highlightChomeGently(name, viewOpts) {
   }
 }
 
+// 【追加261023】検索候補の並べ替え用：町丁目名を［町名、丁目の数字］に分ける（例：女の都三丁目→［女の都, 3］、丁目なし→［名前, 0］）
+function townSortKey(n) {
+  const NUM = { '一':1, '二':2, '三':3, '四':4, '五':5, '六':6, '七':7, '八':8, '九':9 };
+  const m = n.match(/^(.*?)([一二三四五六七八九十]+)丁目$/);
+  if (!m) return [n, 0];
+  const k = m[2];
+  let v;
+  if (k === '十') v = 10;
+  else if (k.indexOf('十') < 0) v = NUM[k];
+  else { const p = k.split('十'); v = (p[0] ? NUM[p[0]] : 1) * 10 + (p[1] ? NUM[p[1]] : 0); }
+  return [m[1], v];
+}
+
 function onSearchInput(val) {
   const q  = val.trim();
   const el = document.getElementById('search-results');
   if (!q) { el.style.display = 'none'; return; }
-  const hits = allTownNames.filter(n => n.includes(q)).slice(0, 30);
+  // 【修正261023】同じ町の丁目を一丁目→二丁目…の順に並べる（町の並びは従来どおり）
+  const firstIdx = {};
+  allTownNames.forEach((n, i) => { const base = townSortKey(n)[0]; if (!(base in firstIdx)) firstIdx[base] = i; });
+  const hits = allTownNames.filter(n => n.includes(q))
+    .sort((x, y) => {
+      const kx = townSortKey(x), ky = townSortKey(y);
+      return (firstIdx[kx[0]] - firstIdx[ky[0]]) || (kx[1] - ky[1]);
+    })
+    .slice(0, 30);
   el.style.display = 'block';
   if (!hits.length) { el.innerHTML = '<div id="result-count">該当なし</div>'; return; }
   el.innerHTML = '<div id="result-count">' + hits.length + '件該当</div>' +
