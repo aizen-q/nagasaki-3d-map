@@ -938,7 +938,23 @@
 // 自動再生・プッシュ通知・あいぜん不動産リンク）を非表示・無効化する。
 // 通常版・限定版とも同一ファイルで管理し、更新は1回で両方に反映される。
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-const IS_LITE_MODE = new URLSearchParams(window.location.search).get('mode') === 'lite';
+// 【追加261103】CITY-RATE-HOUJIN-1：?mode=houjin＝法人サイト用（限定版の表示＋長崎市提供の空き家発生率〔推計値〕）。
+// 市のデータは使用条件により法人のウェブサイトでの公開に限るため、法人サイト（nagasaki-deshima.space）に
+// 埋め込まれているときだけ、法人サーバーのJSONを読む。aizen2024.com（指定なし）と ?mode=lite の表示は変えない。
+const MAP_MODE = new URLSearchParams(window.location.search).get('mode');
+const IS_HOUJIN_MODE = MAP_MODE === 'houjin';
+const IS_LITE_MODE = MAP_MODE === 'lite' || IS_HOUJIN_MODE;
+const HOUJIN_SITE_RE = /^https:\/\/(www\.)?nagasaki-deshima\.space(\/|$)/;
+const HOUJIN_DATA_OK = IS_HOUJIN_MODE && window.self !== window.top && HOUJIN_SITE_RE.test(document.referrer || '');
+const CITY_RATE_URL = 'https://nagasaki-deshima.space/map-data/akiya_rate_city.json';
+const CITY_RATE_CLASSES = [
+  { min: 0,  label: '3%未満',     color: '#FDE0DD' },
+  { min: 3,  label: '3〜5%',      color: '#FCBBA1' },
+  { min: 5,  label: '5〜10%',     color: '#FC9272' },
+  { min: 10, label: '10〜15%',    color: '#EF3B2C' },
+  { min: 15, label: '15%以上',    color: '#A50F15' }
+];
+// 市のデータの町名（例：戸町5丁目）を地図の町丁目名（例：戸町五丁目）に合わせるための変換は、JSON作成時に済ませてある。
 if (IS_LITE_MODE) {
   document.body.classList.add('lite-mode');
   const popChkInit = document.getElementById('pop-checkbox');
@@ -947,6 +963,25 @@ if (IS_LITE_MODE) {
   if (akiyaChkInit) akiyaChkInit.checked = true;
   const popLegendInit = document.getElementById('pop-legend');
   if (popLegendInit) popLegendInit.classList.remove('visible');
+}
+if (IS_HOUJIN_MODE) {
+  if (!HOUJIN_DATA_OK) { const ck = document.getElementById('akiya-checkbox'); if (ck) ck.checked = false; }
+  const lbl = document.querySelector('#akiya-section .toggle-label');
+  if (lbl) lbl.textContent = '空き家発生率を表示（推計値）';
+  const notes = document.querySelectorAll('#akiya-section .toggle-note');
+  if (notes[0]) notes[0].textContent = HOUJIN_DATA_OK
+    ? '面塗り：町丁目別の空き家（住戸）発生率（推計値）。長崎市資産税課の外観目視調査（R3〜R4）をもとに長崎市が提供'
+    : '空き家発生率（市提供データ）は、一般社団法人長崎出島まちづくり研究所のウェブサイトでのみ表示します';
+  const lg = document.getElementById('akiya-legend');
+  if (lg) lg.innerHTML =
+    '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">' +
+    '<h3 style="margin:0;">空き家発生率（町丁目・推計値）</h3>' +
+    '<button onclick="closeAkiyaLegend()" style="background:none;border:none;cursor:pointer;color:#999;font-size:16px;line-height:1;padding:0 0 0 8px;" title="閉じる">&#x00D7;</button></div>' +
+    CITY_RATE_CLASSES.map(c => '<div class="legend-row"><div class="legend-swatch" style="background:' + c.color + '"></div><span class="legend-label">' + c.label + '</span></div>').join('') +
+    '<div class="legend-row"><div class="legend-swatch" style="background:#BDBDBD"></div><span class="legend-label">データなし</span></div>' +
+    '<div class="legend-note" style="max-width:240px;line-height:1.5;">空き家の定義：公道からの外観目視調査で、郵便物等が大量に溜まっている、電気・水道・ガスメーターが停止又は撤去されている、窓ガラスが破損している、建物全体に雑草が繁茂している、居住の気配がない などに該当するもの（国土交通省「地方公共団体における空家調査の手引き（H24）」に基づく判定）<br>' +
+    '※空き家発生率は、外観目視調査を基にしていることから、推計値です。<br>' +
+    '出典：長崎市（長崎市財務部資産税課が実施した調査〔R3〜R4〕を元に作成）</div>';
 }
 
 // MAP-UI-FIX-1（260911）：#guide（操作ガイドパネル）はデフォルトで表示されたままで、
@@ -1317,7 +1352,7 @@ const AKIYA_RATE_URL = 'https://aizen2024.com/wp-content/uploads/2026/06/akiya_r
 
 let akiyaRateReady = false;   // 面塗り（空き家発生率10%以上）レイヤーの初回読み込み完了フラグ
 let akiyaPinsReady = false;   // ピン・不確実性円レイヤーの初回読み込み完了フラグ（トグルに非連動、常時表示）
-let pendingAkiyaVisibility = IS_LITE_MODE;  // 限定版はデフォルトで面塗りをON（ピンは常時表示のため対象外）
+let pendingAkiyaVisibility = IS_LITE_MODE && (!IS_HOUJIN_MODE || HOUJIN_DATA_OK);  // 【変更261103】houjinで法人サイト外のときは面塗りなし  // 限定版はデフォルトで面塗りをON（ピンは常時表示のため対象外）
 let akiyaCurrentPopup = null;
 let akiyaIconsRegistered = false; // map.addImageで登録済みのアイコンID集合の初期化フラグ
 let akiyaPinFeatures = []; // 価格・徒歩圏フィルタ用に、生成したピンfeatureを保持
@@ -1342,6 +1377,8 @@ function loadAkiyaRateLayer() {
     document.getElementById('akiya-legend').classList.add('visible');
     return;
   }
+
+  if (IS_HOUJIN_MODE) { loadCityRateLayer(); return; }
 
   // --- 面塗り（空き家発生率） ---
   fetch(AKIYA_RATE_URL)
@@ -1401,6 +1438,69 @@ function loadAkiyaRateLayer() {
       akiyaRateReady = true;
     })
     .catch(err => console.error('Akiya rate GeoJSON error:', err));
+}
+
+// 【追加261103】CITY-RATE-HOUJIN-1：法人サイト用の面塗り（長崎市提供の町丁目別・空き家〔住戸〕発生率、推計値）。
+// 地図の町丁目の区域（townGeoJSON）に、JSONの値を町丁目名で当てる。丁目のない区域はNODOT_MAPで所属の丁目に読み替える。
+function loadCityRateLayer() {
+  if (!HOUJIN_DATA_OK) return;
+  fetch(CITY_RATE_URL)
+    .then(r => { if (!r.ok) throw new Error('fetch failed: city rate'); return r.json(); })
+    .then(json => {
+      const data = json.data || {};
+      const feats = (townGeoJSON ? townGeoJSON.features : []).map(f => {
+        const raw = f.properties && f.properties.S_NAME;
+        if (!raw || raw === '長崎港') return null;
+        const name = townLabel(raw);
+        const v = data[name];
+        return { type: 'Feature', geometry: f.geometry,
+          properties: { S_NAME: raw, town: name, city_rate: v ? v[0] : -1, city_type: v ? v[1] : '' } };
+      }).filter(Boolean);
+      map.addSource('akiya-rate', { type: 'geojson', data: { type: 'FeatureCollection', features: feats } });
+      const expr = ['case', ['<', ['get', 'city_rate'], 0], '#BDBDBD'];
+      for (let i = CITY_RATE_CLASSES.length - 1; i >= 1; i--) {
+        expr.push(['>=', ['get', 'city_rate'], CITY_RATE_CLASSES[i].min], CITY_RATE_CLASSES[i].color);
+      }
+      expr.push(CITY_RATE_CLASSES[0].color);
+      map.addLayer({
+        id: 'akiya-rate-fill', type: 'fill', source: 'akiya-rate',
+        layout: { visibility: 'visible' },
+        paint: { 'fill-color': expr, 'fill-opacity': 0.55 }
+      }, 'town-highlight-fill');
+      map.setPaintProperty('town-outline', 'line-color', '#fff');
+      map.setPaintProperty('town-outline', 'line-opacity', 0.85);
+      map.on('click', 'akiya-rate-fill', e => {
+        if (!e.features || !e.features.length) return;
+        if (selectedTown) return;
+        const popFeatures = map.queryRenderedFeatures(e.point, { layers: ['pop-fill'] });
+        if (popFeatures.length) return;
+        if (akiyaCurrentPopup) akiyaCurrentPopup.remove();
+        if (currentPopup) { currentPopup.remove(); currentPopup = null; }
+        if (typeof viewspotCurrentPopup !== 'undefined' && viewspotCurrentPopup) { viewspotCurrentPopup.remove(); viewspotCurrentPopup = null; }
+        const p = e.features[0].properties;
+        const PopupClass = window.maplibregl ? window.maplibregl.Popup : null;
+        if (!PopupClass) return;
+        const rate = Number(p.city_rate);
+        akiyaCurrentPopup = new PopupClass({ closeButton: true, closeOnClick: true })
+          .setLngLat(e.lngLat)
+          .setHTML(
+            '<div class="popup-inner">' +
+            '<div class="popup-title">' + p.town + '</div>' +
+            (rate >= 0
+              ? '<div class="popup-row"><span>空き家発生率（推計値）</span><span>' + rate.toFixed(1) + '%</span></div>' +
+                '<div class="popup-row"><span>市街地類型</span><span>' + p.city_type + '</span></div>'
+              : '<div class="popup-row"><span>空き家発生率</span><span>データなし</span></div>') +
+            '<div class="popup-note">出典: 長崎市（資産税課の外観目視調査 R3〜R4 を元に作成）。推計値</div>' +
+            '</div>'
+          )
+          .addTo(map);
+      });
+      map.on('mouseenter', 'akiya-rate-fill', () => { if (!selectedTown) map.getCanvas().style.cursor = 'pointer'; });
+      map.on('mouseleave', 'akiya-rate-fill', () => { if (!selectedTown) map.getCanvas().style.cursor = ''; });
+      document.getElementById('akiya-legend').classList.add('visible');
+      akiyaRateReady = true;
+    })
+    .catch(err => console.error('City rate JSON error:', err));
 }
 
 // ピンは排他トグル（空き家発生率10%以上／人口増減／用途地域）の状態に関わらず常時表示。
@@ -1784,7 +1884,9 @@ function onAkiyaToggle(checked) {
       onHouseholdToggle(false);
     }
 
-    if (layersReady) {
+    if (IS_HOUJIN_MODE && !HOUJIN_DATA_OK) {
+      // 【追加261103】法人サイトの外では市のデータを表示しない（トグルの説明文で案内）
+    } else if (layersReady) {
       loadAkiyaRateLayer();
     } else {
       pendingAkiyaVisibility = true;
