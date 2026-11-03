@@ -1471,7 +1471,7 @@ function loadCityRateLayer() {
       map.setPaintProperty('town-outline', 'line-opacity', 0.85);
       map.on('click', 'akiya-rate-fill', e => {
         if (!e.features || !e.features.length) return;
-        if (selectedTown) return;
+        // 【変更261103b】町名検索で町を選んだ後も、地図をクリックすればポップアップを出す（Qtaroさんの指摘）
         const popFeatures = map.queryRenderedFeatures(e.point, { layers: ['pop-fill'] });
         if (popFeatures.length) return;
         if (akiyaCurrentPopup) akiyaCurrentPopup.remove();
@@ -1490,12 +1490,11 @@ function loadCityRateLayer() {
               ? '<div class="popup-row"><span>空き家発生率（推計値）</span><span>' + rate.toFixed(1) + '%</span></div>' +
                 '<div class="popup-row"><span>市街地類型</span><span>' + p.city_type + '</span></div>'
               : '<div class="popup-row"><span>空き家発生率</span><span>データなし</span></div>') +
-            '<div class="popup-note">出典: 長崎市（資産税課の外観目視調査 R3〜R4 を元に作成）。推計値</div>' +
             '</div>'
           )
           .addTo(map);
       });
-      map.on('mouseenter', 'akiya-rate-fill', () => { if (!selectedTown) map.getCanvas().style.cursor = 'pointer'; });
+      map.on('mouseenter', 'akiya-rate-fill', () => { map.getCanvas().style.cursor = 'pointer'; });
       map.on('mouseleave', 'akiya-rate-fill', () => { if (!selectedTown) map.getCanvas().style.cursor = ''; });
       document.getElementById('akiya-legend').classList.add('visible');
       akiyaRateReady = true;
