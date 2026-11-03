@@ -523,6 +523,19 @@
       #akiya-legend { bottom:16px; left:12px; }
       #akiya-pin-legend { bottom:16px; left:12px; right:auto; max-height:50vh; }
     }
+    /* 【追加261103b】CITY-RATE-HOUJIN-2：スマートフォン（法人サイト・限定版）で
+       面塗りの凡例とピンの凡例が左下で重なる→ピンの凡例を右上（ズームボタンの下）に移し、
+       2つの凡例を小さくする。空き家の定義は地図の下の本文にあるため、凡例では省く。 */
+    @media (max-width:600px) {
+      body.lite-mode #akiya-legend { bottom:12px; left:8px; padding:8px 10px; min-width:0; max-width:calc(55% - 12px); }
+      body.lite-mode #akiya-legend .legend-row { margin-bottom:2px; }
+      body.lite-mode #akiya-legend .legend-label { font-size:11px; }
+      body.lite-mode #akiya-legend .city-def { display:none; }
+      body.lite-mode #akiya-legend .city-src { font-size:9px; margin-top:4px; }
+      body.lite-mode #akiya-pin-legend { top:150px; bottom:auto; right:8px; left:auto; padding:8px 10px; min-width:0; max-width:calc(45% - 8px); max-height:none; }
+      body.lite-mode #akiya-pin-legend .akiya-pin-row { margin-bottom:2px; font-size:11px; }
+      body.lite-mode #akiya-pin-legend .legend-note { font-size:9px; line-height:1.4; }
+    }
 
     /* ── 体験スポット（眺望360°・鳥の目動画）ピン ── */
     .viewspot-marker {
@@ -970,8 +983,9 @@ if (IS_HOUJIN_MODE) {
   if (lbl) lbl.textContent = '空き家発生率を表示（推計値）';
   const notes = document.querySelectorAll('#akiya-section .toggle-note');
   if (notes[0]) notes[0].textContent = HOUJIN_DATA_OK
-    ? '面塗り：町丁目別の空き家（住戸）発生率（推計値）。長崎市資産税課の外観目視調査（R3〜R4）をもとに長崎市が提供'
+    ? '面塗り：町丁目別の空き家（住戸）発生率（推計値）。長崎市資産税課の外観目視調査（R3〜R4）をもとに長崎市が作成したデータ'
     : '空き家発生率（市提供データ）は、一般社団法人長崎出島まちづくり研究所のウェブサイトでのみ表示します';
+  if (notes[1]) notes[1].textContent = 'ピン：空き家バンク登録物件';
   const lg = document.getElementById('akiya-legend');
   if (lg) lg.innerHTML =
     '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">' +
@@ -979,8 +993,8 @@ if (IS_HOUJIN_MODE) {
     '<button onclick="closeAkiyaLegend()" style="background:none;border:none;cursor:pointer;color:#999;font-size:16px;line-height:1;padding:0 0 0 8px;" title="閉じる">&#x00D7;</button></div>' +
     CITY_RATE_CLASSES.map(c => '<div class="legend-row"><div class="legend-swatch" style="background:' + c.color + '"></div><span class="legend-label">' + c.label + '</span></div>').join('') +
     '<div class="legend-row"><div class="legend-swatch" style="background:#BDBDBD"></div><span class="legend-label">データなし</span></div>' +
-    '<div class="legend-note" style="max-width:240px;line-height:1.5;">空き家の定義：公道からの外観目視調査で、郵便物等が大量に溜まっている、電気・水道・ガスメーターが停止又は撤去されている、窓ガラスが破損している、建物全体に雑草が繁茂している、居住の気配がない などに該当するもの（国土交通省「地方公共団体における空家調査の手引き（H24）」に基づく判定）<br>' +
-    '※空き家発生率は、外観目視調査を基にしていることから、推計値です。<br>' +
+    '<div class="legend-note city-def" style="max-width:240px;line-height:1.5;">空き家の定義：公道からの外観目視調査で、郵便物等が大量に溜まっている、電気・水道・ガスメーターが停止又は撤去されている、窓ガラスが破損している、建物全体に雑草が繁茂している、居住の気配がない などに該当するもの（国土交通省「地方公共団体における空家調査の手引き（H24）」に基づく判定）</div>' +
+    '<div class="legend-note city-src" style="max-width:240px;line-height:1.5;">※空き家発生率は、外観目視調査を基にしていることから、推計値です。<br>' +
     '出典：長崎市（長崎市財務部資産税課が実施した調査〔R3〜R4〕を元に作成）</div>';
 }
 
@@ -1487,8 +1501,8 @@ function loadCityRateLayer() {
             '<div class="popup-inner">' +
             '<div class="popup-title">' + p.town + '</div>' +
             (rate >= 0
-              ? '<div class="popup-row"><span>空き家発生率（推計値）</span><span>' + rate.toFixed(1) + '%</span></div>' +
-                '<div class="popup-row"><span>市街地類型</span><span>' + p.city_type + '</span></div>'
+              ? '<div class="popup-row" style="gap:14px"><span>空き家発生率（推計値）</span><span>' + rate.toFixed(1) + '%</span></div>' +
+                '<div class="popup-row" style="gap:14px"><span>市街地類型</span><span>' + p.city_type + '</span></div>'
               : '<div class="popup-row"><span>空き家発生率</span><span>データなし</span></div>') +
             '</div>'
           )
